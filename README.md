@@ -62,10 +62,29 @@ the bundled icon to `~/.local/share/icons/`.
 
 ### macOS
 
-1. Extract: `tar xzf Yalc-osx-arm64.tar.gz` (or the x64 variant on Intel Macs)
-2. Install dependencies via Homebrew: `brew install mpv ffmpeg`
-3. First run: right-click `Yalc.app` → Open (Gatekeeper prompts the first time only).
-   Subsequent launches work normally.
+> **Status:** macOS bundles are experimental. Video playback uses libmpv's render API
+> path; please file an issue if you hit problems on your hardware.
+
+1. Install [Homebrew](https://brew.sh/) if you don't have it:
+   ```sh
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+   Then follow the post-install hint to add `brew` to your shell `PATH`.
+2. Install dependencies: `brew install mpv ffmpeg`
+3. Extract the bundle: `tar xzf Yalc-osx-arm64.tar.gz` (use the `x64` variant on Intel Macs).
+4. Bypass Gatekeeper. Yalc is ad-hoc signed (no paid Apple Developer ID), so macOS
+   blocks first launch with *"Apple could not verify that 'Yalc' is free of malware"*.
+   Pick one of the following:
+
+   - **Strip the quarantine attribute, then open normally:**
+     ```sh
+     xattr -dr com.apple.quarantine /path/to/Yalc.app
+     open /path/to/Yalc.app
+     ```
+   - **Manual override:** double-click the bundle, dismiss the warning, then go to
+     **System Settings → Privacy & Security**, scroll to the bottom, and click
+     **"Open Anyway"** next to the Yalc entry. This whitelists the specific bundle
+     on the specific machine.
 
 ## Keyboard
 

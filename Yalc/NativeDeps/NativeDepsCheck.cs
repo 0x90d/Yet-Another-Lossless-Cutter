@@ -44,9 +44,25 @@ internal static class NativeDepsCheck
 
     private static MissingDeps DetectUnix()
     {
-        var libmpvMissing = !TryLoad(LibmpvSoName());
-        var ffmpegMissing = !TryLoad(AvcodecSoName());
+        var libmpvMissing = !TryLoadAnywhere(LibmpvSoName());
+        var ffmpegMissing = !TryLoadAnywhere(AvcodecSoName());
         return new MissingDeps(libmpvMissing, ffmpegMissing);
+    }
+
+    /// <summary>
+    /// Try the bare name first (uses the loader's default search path) and then fall
+    /// back to absolute Homebrew paths. macOS dyld doesn't search <c>/opt/homebrew/lib</c>
+    /// or <c>/usr/local/lib</c> by default, so a <c>brew install</c> of mpv/ffmpeg
+    /// would otherwise look "missing" to a bare TryLoad.
+    /// </summary>
+    private static bool TryLoadAnywhere(string fileName)
+    {
+        if (TryLoad(fileName)) return true;
+        foreach (var path in HomebrewPaths.CandidatesFor(fileName))
+        {
+            if (TryLoad(path)) return true;
+        }
+        return false;
     }
 
     private static bool TryLoad(string name)

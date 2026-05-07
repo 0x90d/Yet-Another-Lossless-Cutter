@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen;
+using YetAnotherLosslessCutter.NativeDeps;
 
 namespace YetAnotherLosslessCutter.Cutting;
 
@@ -44,8 +45,7 @@ internal static class NativeFfmpegLoader
             _initialized = true;
             try
             {
-                var baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
-                ffmpeg.RootPath = baseDir;
+                ffmpeg.RootPath = ResolveRootPath();
 
                 // Trigger one symbol resolution so we fail fast here (with a clean
                 // exception) rather than from inside an extraction call later.
@@ -58,6 +58,28 @@ internal static class NativeFfmpegLoader
                 _failureReason = BuildFailureReason(ex);
             }
         }
+    }
+
+    /// <summary>
+    /// Pick the directory where FFmpeg.AutoGen should look for shared libraries.
+    /// Windows: the exe folder, where the auto-downloader drops them.
+    /// macOS / Linux: the first Homebrew lib directory that contains a probe
+    /// dylib/so, falling back to the exe folder. macOS dyld doesn't search
+    /// <c>/opt/homebrew/lib</c> by default, so we have to point AutoGen at it
+    /// explicitly when the user installed ffmpeg via brew.
+    /// </summary>
+    private static string ResolveRootPath()
+    {
+        var baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return baseDir;
+
+        var probe = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+            ? "libavcodec.62.dylib"
+            : "libavcodec.so.62";
+
+        return HomebrewPaths.FindDirContaining(probe) ?? baseDir;
     }
 
     private static string BuildFailureReason(Exception ex)
