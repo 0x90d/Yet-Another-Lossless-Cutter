@@ -102,6 +102,11 @@ those live in plugins under [Plugins/](Plugins/). Drop a sibling `.csproj` and i
 auto-included via a glob in the main project. Compile-time linked, NativeAOT-clean —
 see [Plugins/README.md](Plugins/README.md) for the contract and a minimal example.
 
+## Screenshots
+<img width="1602" height="1014" alt="image" src="https://github.com/user-attachments/assets/825641b9-afc5-48ee-98e0-aa6d025e9208" />
+
+
+
 ## License
 
 [GPL-3.0](LICENSE). Yalc dynamically links to libmpv and FFmpeg at runtime
