@@ -40,6 +40,20 @@ public class MpvOpenGlVideoView : OpenGlControlBase
         });
     }
 
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        // OpenGlControlBase has no managed visual content, so the default
+        // MeasureOverride from Control returns Size.Empty — which propagates up
+        // through the Decorator wrapper and leaves us with bounds=0,0,0,0.
+        // Avalonia then never schedules a render, OnOpenGlRender never fires,
+        // and the mpv render context never gets created. Claim the full
+        // available size; clamp infinities (which appear in unconstrained
+        // parents like ScrollViewer) to zero so we don't blow up the layout.
+        var w = double.IsPositiveInfinity(availableSize.Width) ? 0 : availableSize.Width;
+        var h = double.IsPositiveInfinity(availableSize.Height) ? 0 : availableSize.Height;
+        return new Size(w, h);
+    }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
