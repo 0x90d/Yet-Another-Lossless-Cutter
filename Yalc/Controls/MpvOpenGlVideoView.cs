@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using YetAnotherLosslessCutter.Mpv;
 
 namespace YetAnotherLosslessCutter.Controls;
@@ -41,6 +42,17 @@ public class MpvOpenGlVideoView : OpenGlControlBase
                 p.Initialize();
             view.RequestNextFrameRendering();
         });
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // Avalonia's OpenGlControlBase doesn't render unless asked — without this
+        // request OnOpenGlRender never fires until something else (resize, focus
+        // change, etc.) provokes it. mpv with vo=libmpv refuses to start playback
+        // until our render context exists, so we have to force the first render
+        // up front rather than waiting for the user's first interaction.
+        RequestNextFrameRendering();
     }
 
     protected override void OnOpenGlRender(GlInterface gl, int fb)

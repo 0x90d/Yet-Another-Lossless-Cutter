@@ -16,6 +16,13 @@ public sealed class MpvPlayer : IDisposable
 
     // Render API state (used on macOS — wid path leaves these zeroed).
     private IntPtr _renderCtx;
+    private bool _useRenderApi;
+    // mpv with vo=libmpv refuses to start video output until the render context
+    // is created. The GL view doesn't create that context until its first
+    // OnOpenGlRender — which can lag behind the user picking a file. Hold the
+    // last-requested loadfile path here and replay it once the render context
+    // exists. Latest LoadFile call wins; previous queued path is overwritten.
+    private string? _pendingLoadFile;
     // Pinned delegates kept alive for the render context's lifetime so the
     // GC doesn't reclaim them while libmpv still holds the function pointers.
     private LibMpv.GetProcAddressFunc? _getProcAddressDelegate;
@@ -63,6 +70,8 @@ public sealed class MpvPlayer : IDisposable
     private void InitializeCore(string? widValue)
     {
         if (_handle != IntPtr.Zero) throw new InvalidOperationException("Already initialized");
+
+        _useRenderApi = widValue is null;
 
         _handle = LibMpv.Create();
         if (_handle == IntPtr.Zero) throw new InvalidOperationException("mpv_create failed");
@@ -184,6 +193,12 @@ public sealed class MpvPlayer : IDisposable
             Marshal.FreeHGlobal(initParamsPtr);
             Marshal.FreeCoTaskMem(apiTypePtr);
         }
+
+        // Now that mpv has a video output, replay any LoadFile that arrived early.
+        var pending = _pendingLoadFile;
+        _pendingLoadFile = null;
+        if (pending != null)
+            Check(LibMpv.CommandArgs(_handle, "loadfile", pending));
     }
 
     /// <summary>
@@ -279,6 +294,14 @@ public sealed class MpvPlayer : IDisposable
     public void LoadFile(string path)
     {
         EnsureInit();
+        if (_useRenderApi && _renderCtx == IntPtr.Zero)
+        {
+            // Render context isn't up yet — issuing loadfile now would make mpv
+            // bail with "No render context set" and refuse to retry. Stash the
+            // path; CreateRenderContext drains it.
+            _pendingLoadFile = path;
+            return;
+        }
         Check(LibMpv.CommandArgs(_handle, "loadfile", path));
     }
 
@@ -289,6 +312,9 @@ public sealed class MpvPlayer : IDisposable
     public void Stop()
     {
         EnsureInit();
+        // If a loadfile was queued waiting for the render context, cancel it —
+        // the caller wanted playback gone, not deferred.
+        _pendingLoadFile = null;
         LibMpv.CommandArgs(_handle, "stop");
     }
 
