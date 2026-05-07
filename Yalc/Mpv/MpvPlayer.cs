@@ -98,9 +98,20 @@ public sealed class MpvPlayer : IDisposable
         LibMpv.SetOptionString(_handle, "hr-seek", "yes");
         LibMpv.SetOptionString(_handle, "hr-seek-framedrop", "no");
 
-        // Quiet logs
-        LibMpv.SetOptionString(_handle, "terminal", "no");
-        LibMpv.SetOptionString(_handle, "msg-level", "all=warn");
+        // Logs. The render-API path is still being validated on macOS — enable
+        // verbose terminal output there so a user running from a tty can see
+        // what mpv is actually doing (file load, codec selection, render
+        // context errors). The wid path stays quiet.
+        if (widValue != null)
+        {
+            LibMpv.SetOptionString(_handle, "terminal", "no");
+            LibMpv.SetOptionString(_handle, "msg-level", "all=warn");
+        }
+        else
+        {
+            LibMpv.SetOptionString(_handle, "terminal", "yes");
+            LibMpv.SetOptionString(_handle, "msg-level", "all=v");
+        }
 
         Check(LibMpv.Initialize(_handle));
 
