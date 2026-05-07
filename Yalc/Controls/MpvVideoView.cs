@@ -26,6 +26,7 @@ public class MpvVideoView : Decorator
     {
         if (OperatingSystem.IsMacOS())
         {
+            Console.Error.WriteLine("[MpvVideoView] macOS branch — creating MpvOpenGlVideoView");
             var view = new MpvOpenGlVideoView();
             view.Bind(MpvOpenGlVideoView.PlayerProperty, this.GetObservable(PlayerProperty));
             Child = view;
