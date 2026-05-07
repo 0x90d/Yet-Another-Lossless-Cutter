@@ -1,0 +1,484 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:c="using:YetAnotherLosslessCutter.Controls"
+        xmlns:local="using:YetAnotherLosslessCutter"
+        xmlns:dd="using:Avalonia.Input"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="780"
+        x:Class="YetAnotherLosslessCutter.MainWindow"
+        Title="YetAnotherLosslessCutter"
+        Icon="avares://Yalc/Assets/Icon.ico"
+        Width="1280" Height="780"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource SemiColorBackground0}"
+        dd:DragDrop.AllowDrop="True">
+
+  <Window.Resources>
+    <!-- Queue item: smaller thumbnail (more rows fit), filename on top, time range
+         compact, full-width progress bar at the bottom. Status is shown ABOVE
+         the bar (not overlapping it) and tracks Waiting / Running / Finished / Failed. -->
+    <DataTemplate x:Key="QueueItemTemplate" x:DataType="local:VideoSegment">
+      <Grid ColumnDefinitions="Auto,*" Margin="6,4" HorizontalAlignment="Stretch">
+        <Grid.ContextFlyout>
+          <MenuFlyout>
+            <MenuItem Header="Open source in Explorer" Click="ContextOpenSourceInExplorer_Click" />
+            <MenuItem Header="Open output folder" Click="ContextOpenOutputFolder_Click" />
+            <MenuItem Header="Copy error" Click="ContextCopyError_Click" />
+            <MenuItem Header="Remove from queue" Click="ContextRemoveFromQueue_Click" />
+          </MenuFlyout>
+        </Grid.ContextFlyout>
+        <Border Grid.Column="0" Width="100" Height="56"
+                Background="Black" CornerRadius="3"
+                BorderBrush="{Binding Brush}" BorderThickness="2"
+                VerticalAlignment="Top">
+          <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+        </Border>
+        <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Top" Spacing="3">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="{Binding SourceFileName}"
+                       FontSize="11" Foreground="#f0f0f0"
+                       TextTrimming="CharacterEllipsis" />
+            <!-- Tooltip surfaces FailureReason (ffmpeg stderr tail) for Failed items.
+                 Avalonia hides tooltips with null content, so non-failed items show none. -->
+            <TextBlock Grid.Column="1" Text="{Binding Status}"
+                       FontSize="10" Foreground="#aaaaaa" Margin="6,0,0,0"
+                       ToolTip.Tip="{Binding FailureReason}" />
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="{Binding CutFrom, StringFormat=hh\\:mm\\:ss\\.fff}"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="10" Foreground="#cccccc" />
+            <TextBlock Text="→" FontSize="10" Foreground="#777777" />
+            <TextBlock Text="{Binding CutTo, StringFormat=hh\\:mm\\:ss\\.fff}"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="10" Foreground="#cccccc" />
+          </StackPanel>
+          <ProgressBar Value="{Binding Progress}" Maximum="1"
+                       MinHeight="4" Height="6"
+                       HorizontalAlignment="Stretch" />
+        </StackPanel>
+      </Grid>
+    </DataTemplate>
+
+    <!-- Segment item: thumbnail + Start/End/Δ rows + a delete button on the right.
+         Run.Text bindings replaced with TextBlock.Text bindings (Run.Text doesn't
+         re-evaluate on PropertyChanged in some Avalonia paths). Colors hardcoded —
+         the dark Semi resource brushes weren't resolving correctly here. -->
+    <DataTemplate x:Key="VideoSegmentItemTemplate" x:DataType="local:VideoSegment">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="6,4" HorizontalAlignment="Stretch">
+        <Grid.ContextFlyout>
+          <MenuFlyout>
+            <MenuItem Header="Open source in Explorer" Click="ContextOpenSourceInExplorer_Click" />
+            <MenuItem Header="Remove" Click="ContextRemoveSegment_Click" />
+          </MenuFlyout>
+        </Grid.ContextFlyout>
+        <!-- Border color comes from the segment's tag color so the user can match a
+             list entry to its band on the timeline. -->
+        <Border Grid.Column="0" Width="120" Height="68"
+                Background="Black" CornerRadius="3"
+                BorderBrush="{Binding Brush}" BorderThickness="2">
+          <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+        </Border>
+        <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Spacing="3">
+          <Grid ColumnDefinitions="40,*">
+            <TextBlock Grid.Column="0" Text="Start"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="11"
+                       Foreground="#aaaaaa" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding CutFrom, StringFormat=hh\\:mm\\:ss\\.fff}"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="11"
+                       Foreground="#f0f0f0" />
+          </Grid>
+          <Grid ColumnDefinitions="40,*">
+            <TextBlock Grid.Column="0" Text="End"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="11"
+                       Foreground="#aaaaaa" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding CutTo, StringFormat=hh\\:mm\\:ss\\.fff}"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="11"
+                       Foreground="#f0f0f0" />
+          </Grid>
+          <Grid ColumnDefinitions="40,*">
+            <TextBlock Grid.Column="0" Text="Δ"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="10"
+                       Foreground="#888888" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding CutDuration, StringFormat=hh\\:mm\\:ss\\.fff}"
+                       FontFamily="Consolas,Menlo,Courier New" FontSize="10"
+                       Foreground="#cccccc" />
+          </Grid>
+        </StackPanel>
+        <Button Grid.Column="2" Classes="segment-delete"
+                Content="✕" Tag="{Binding}"
+                Click="DeleteSegment_Click"
+                ToolTip.Tip="Remove segment" />
+      </Grid>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Window.Styles>
+    <!-- Tooltip placement: pin tooltips ABOVE their button. Default placement (near
+         the cursor) was overlapping bottom-row buttons in fullscreen, where the
+         tooltip's hit area intercepted the first click — forcing the user to
+         double-click to actually trigger the action. Avalonia auto-flips to below
+         if there's no room above (top toolbar still works). -->
+    <Style Selector="Button">
+      <Setter Property="ToolTip.Placement" Value="Top" />
+      <Setter Property="ToolTip.VerticalOffset" Value="-4" />
+    </Style>
+
+    <!-- Stretch ListBox items to fill the column so item templates have predictable
+         width — without this, content can overflow into the parent's adjacent space. -->
+    <Style Selector="ListBox.fill > ListBoxItem">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="6,2" />
+    </Style>
+    <!-- Tiny circular delete button, dim by default, red on hover. -->
+    <Style Selector="Button.segment-delete">
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="Margin" Value="0,4,4,0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#888888" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="Button.segment-delete:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#552222" />
+      <Setter Property="Foreground" Value="#ff6666" />
+    </Style>
+    <!-- Destructive button: subtle until hovered, then turns red. Used by Delete File
+         (action row) so it visibly differs from the neutral neighbors. -->
+    <Style Selector="Button.destructive:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#5a2222" />
+      <Setter Property="Foreground" Value="#ff8888" />
+      <Setter Property="BorderBrush" Value="#7a3333" />
+    </Style>
+    <!-- Tiny vertical separator used between transport-button groups. -->
+    <Style Selector="Border.tx-sep">
+      <Setter Property="Width" Value="1" />
+      <Setter Property="Margin" Value="6,4" />
+      <Setter Property="Background" Value="#3a3a3a" />
+    </Style>
+    <!-- Subtle empty-state overlay, centered on a list/area. -->
+    <Style Selector="TextBlock.empty-state">
+      <Setter Property="Foreground" Value="#666666" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- Top bar -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto"
+          Background="{DynamicResource SemiColorBackground1}"
+          Height="56">
+      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="10,12">
+        <Button x:Name="OpenButton" Classes="Primary Solid" Content="Open file…"
+                Click="OpenButton_Click" />
+        <!-- Right-edge dropdown for the recent-files list (split-button feel). -->
+        <Button x:Name="RecentFilesButton" Classes="Primary Solid" Content="▾"
+                Padding="6,4" FontSize="10"
+                ToolTip.Tip="Recent files">
+          <Button.Flyout>
+            <MenuFlyout />
+          </Button.Flyout>
+        </Button>
+        <Button x:Name="OpenFolderButton" Content="Open folder…"
+                Margin="6,0,0,0"
+                Click="OpenFolderButton_Click"
+                ToolTip.Tip="Open every matching video in a folder as a playlist" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="2"
+                  HorizontalAlignment="Center" VerticalAlignment="Center">
+      <StackPanel Orientation="Horizontal" Spacing="8"
+                  HorizontalAlignment="Center" VerticalAlignment="Center">
+        <!-- Countdown counter: how many files remain in the playlist after the
+             current one. Hidden in single-file mode. -->
+        <Border x:Name="PlaylistRemainingPill"
+                IsVisible="False"
+                Background="#2a2a2a" CornerRadius="3"
+                Padding="6,2" VerticalAlignment="Center">
+          <TextBlock x:Name="PlaylistRemainingLabel"
+                     Foreground="#cccccc" FontSize="11"
+                     FontFamily="Consolas,Menlo,Courier New" />
+        </Border>
+        <TextBlock x:Name="FileLabel"
+                   Foreground="#f0f0f0"
+                   FontSize="13" Text="(no file)" VerticalAlignment="Center"
+                   Cursor="Hand"
+                   ToolTip.Tip="Right-click for actions">
+          <TextBlock.ContextFlyout>
+            <MenuFlyout>
+              <MenuItem Header="Open in Explorer" Click="FileLabelOpenInExplorer_Click" />
+            </MenuFlyout>
+          </TextBlock.ContextFlyout>
+        </TextBlock>
+        <TextBlock x:Name="FileSizeLabel"
+                   Foreground="#888888" FontSize="11"
+                   FontFamily="Consolas,Menlo,Courier New"
+                   VerticalAlignment="Center" />
+        <!-- Visible only when MediaInfo says HasAudio == false (file has no
+             audio stream at all). Distinct from the toggle below — that one
+             handles the case of an audio stream that exists but is truncated. -->
+        <TextBlock x:Name="NoAudioIcon" Text="🔇"
+                   Foreground="#ff7777" FontSize="14" VerticalAlignment="Center"
+                   IsVisible="False"
+                   ToolTip.Tip="This file has no audio track" />
+        <!-- Manual mute switch. Hidden when the file has no audio (the red icon
+             above tells the same story); visible otherwise. The orange "!" badge
+             appears when probe detects truncated audio so the user knows what
+             this button is for without reading the tooltip. -->
+        <Button x:Name="AudioToggleButton" Content="🔊"
+                Padding="6,2" FontSize="13" MinHeight="0"
+                IsVisible="False"
+                Click="AudioToggleButton_Click"
+                ToolTip.Tip="Mute audio stream" />
+        <!-- Tooltip = full MediaInfo text. Disabled until a file is probed. -->
+        <Button x:Name="MediaInfoButton" Content="ⓘ"
+                Padding="6,2" FontSize="13" MinHeight="0"
+                IsEnabled="False"
+                ToolTip.Tip="(no media info)" />
+      </StackPanel>
+      <!-- Status-pills row populated from code-behind so toggles live-update. -->
+      <StackPanel x:Name="ActiveSettingsBadges" Orientation="Horizontal"
+                  HorizontalAlignment="Center" />
+      </StackPanel>
+      <Button Grid.Column="2" Content="⚙"
+              FontSize="16" Padding="10,4" Margin="6,8,10,8"
+              Click="SettingsButton_Click"
+              ToolTip.Tip="Open settings" />
+    </Grid>
+
+    <!-- Body: left panel (queue + segments) | splitter | main (video + timeline + transport) -->
+    <Grid Grid.Row="1" x:Name="BodyGrid">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="320" MinWidth="240" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" MinWidth="320" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Left panel -->
+      <Grid Grid.Column="0" RowDefinitions="2*,Auto,3*"
+            Background="{DynamicResource SemiColorBackground1}">
+
+        <!-- Processing Queue -->
+        <Grid Grid.Row="0" RowDefinitions="Auto,*,Auto">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,10,10,4">
+            <TextBlock FontSize="13" FontWeight="SemiBold"
+                       Foreground="#f0f0f0"
+                       Text="Processing Queue" />
+            <Button Grid.Column="1" x:Name="StartQueueButton"
+                    Classes="Primary Solid" Content="▶ Start"
+                    Padding="8,2" FontSize="11" MinHeight="0"
+                    Click="StartQueueButton_Click"
+                    ToolTip.Tip="Manually start processing the queue" />
+          </Grid>
+          <Grid Grid.Row="1">
+            <ListBox x:Name="QueueList" Classes="fill"
+                     Background="Transparent" BorderThickness="0"
+                     ItemTemplate="{StaticResource QueueItemTemplate}" />
+            <TextBlock x:Name="QueueEmptyState" Classes="empty-state"
+                       Margin="20"
+                       Text="No items in queue&#x0A;Press ✂ Cut on a segment to enqueue" />
+          </Grid>
+          <TextBlock Grid.Row="2" x:Name="QueueRemainingLabel"
+                     Foreground="#aaaaaa" FontSize="11"
+                     Margin="14,2,10,6" IsVisible="False" />
+        </Grid>
+
+        <Border Grid.Row="1" Height="1" Background="#2a2a2a" />
+
+        <!-- Segment List for current file -->
+        <Grid Grid.Row="2" RowDefinitions="Auto,*">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,10,10,4">
+            <TextBlock Grid.Column="0"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="#f0f0f0"
+                       Text="Segments" />
+            <Button Grid.Column="1" x:Name="ClearSegmentsButton"
+                    Content="Clear all"
+                    Padding="8,2" FontSize="11" MinHeight="0"
+                    Click="ClearSegmentsButton_Click"
+                    ToolTip.Tip="Remove all segments from the timeline" />
+          </Grid>
+          <Grid Grid.Row="1">
+            <ListBox x:Name="SegmentList" Classes="fill"
+                     Background="Transparent" BorderThickness="0"
+                     ItemTemplate="{StaticResource VideoSegmentItemTemplate}"
+                     SelectionMode="Single" />
+            <TextBlock x:Name="SegmentsEmptyState" Classes="empty-state"
+                       Margin="20"
+                       Text="No segments&#x0A;Drag handles on the timeline, or press +&#x0A;Cut with no segment cuts the whole file" />
+          </Grid>
+        </Grid>
+      </Grid>
+
+      <!-- Drag-handle between the left panel and the main area. Background
+           matches the surrounding panel; on hover it accents so users discover
+           it. The Width=4 column sits to the right of the panel. -->
+      <GridSplitter Grid.Column="1" Width="4"
+                    Background="{DynamicResource SemiColorBackground1}"
+                    ResizeBehavior="PreviousAndNext"
+                    ShowsPreview="False" />
+
+      <!-- Main content -->
+      <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto,Auto">
+
+        <!-- Video — wheel over here seeks (matches WPF). When no file is loaded,
+             VideoEmptyState floats over the black area as a drop-zone hint. -->
+        <Grid Grid.Row="0">
+          <Border Background="Black"
+                  PointerWheelChanged="VideoArea_Wheel">
+            <c:MpvVideoView x:Name="VideoView" />
+          </Border>
+          <Border x:Name="VideoEmptyState"
+                  IsHitTestVisible="False"
+                  Background="#0c0c0c"
+                  BorderBrush="#2a2a2a" BorderThickness="2"
+                  Margin="40" CornerRadius="6">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="10">
+              <TextBlock Text="🎬" FontSize="48" Foreground="#3a3a3a"
+                         HorizontalAlignment="Center" />
+              <TextBlock Text="Drop a video file here"
+                         Foreground="#888888" FontSize="16"
+                         HorizontalAlignment="Center" />
+              <TextBlock Text="or click Open file… / Open folder…"
+                         Foreground="#555555" FontSize="11"
+                         HorizontalAlignment="Center" />
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <!-- Timeline -->
+        <c:TimelineControl Grid.Row="1" x:Name="Timeline" Height="96"
+                           ClipToBounds="False" />
+
+        <!-- Playback row: position + frame-step + Play/Pause + duration. Centered
+             because the user's eye lives here while reviewing footage; jump-magnitude
+             and segment-action buttons live on the row below so this stays clean. -->
+        <Grid Grid.Row="2" Background="{DynamicResource SemiColorBackground1}"
+              ColumnDefinitions="Auto,*,Auto" Margin="0"
+              PointerWheelChanged="VideoArea_Wheel">
+          <Grid.Styles>
+            <Style Selector="Button">
+              <Setter Property="Padding" Value="8,4" />
+              <Setter Property="FontSize" Value="12" />
+              <Setter Property="MinHeight" Value="28" />
+            </Style>
+          </Grid.Styles>
+          <TextBlock Grid.Column="0" x:Name="PositionLabel" VerticalAlignment="Center"
+                     Margin="14,0" FontFamily="Consolas,Menlo,Courier New"
+                     Foreground="{DynamicResource SemiColorTextPrimary}"
+                     Text="00:00:00.000" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                      Spacing="3" Margin="0,6" VerticalAlignment="Center">
+            <Button Content="◄"   Click="FrameBackButton_Click"
+                    Padding="10,6"
+                    ToolTip.Tip="Step 1 frame back ( , )" />
+            <!-- Play is the visual anchor of this row — slightly larger and
+                 with a touch of horizontal breathing room. -->
+            <Button x:Name="PlayPauseButton" Classes="Primary Solid"
+                    Content="▶ Play" Click="PlayPauseButton_Click"
+                    MinWidth="92" Padding="14,8" FontSize="13" FontWeight="SemiBold"
+                    ToolTip.Tip="Play / pause (Space)" />
+            <Button Content="►"   Click="FrameForwardButton_Click"
+                    Padding="10,6"
+                    ToolTip.Tip="Step 1 frame fwd ( . )" />
+          </StackPanel>
+          <TextBlock Grid.Column="2" x:Name="DurationLabel" VerticalAlignment="Center"
+                     Margin="14,0" FontFamily="Consolas,Menlo,Courier New"
+                     Foreground="{DynamicResource SemiColorTextPrimary}"
+                     Text="00:00:00.000" />
+        </Grid>
+
+        <!-- Action row: jump magnitudes + segment controls. Right-click on a jump
+             button starts auto-repeat (WPF muscle-memory); wheel anywhere here
+             always does ±1m unless the button overrides via its Tag. -->
+        <Grid Grid.Row="3" Background="{DynamicResource SemiColorBackground1}"
+              Margin="0"
+              PointerWheelChanged="VideoArea_Wheel">
+          <Grid.Styles>
+            <Style Selector="Button">
+              <Setter Property="Padding" Value="8,4" />
+              <Setter Property="FontSize" Value="12" />
+              <Setter Property="MinHeight" Value="28" />
+            </Style>
+          </Grid.Styles>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                      Spacing="3" Margin="0,4,0,8">
+            <!-- ─── Jump magnitudes ──────────────────────────────────── -->
+            <Button Content="«1m"  Tag="60"  Click="Back60Button_Click"  PointerPressed="Back60Button_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Jump 1 minute back (wheel = ±1m, right-click for auto-repeat)" />
+            <Button Content="«10s" Tag="10"  Click="Back10Button_Click" PointerPressed="Back10Button_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Jump 10s back (wheel = ±10s, right-click for auto-repeat)" />
+            <Button Content="«1s"  Tag="1"   Click="Back1Button_Click"  PointerPressed="Back1Button_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Jump 1s back (wheel = ±1s, right-click for auto-repeat)" />
+            <Button Content="1s»"  Tag="1"   Click="Forward1Button_Click"  PointerPressed="Forward1Button_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Jump 1s fwd (wheel = ±1s, right-click for auto-repeat)" />
+            <Button Content="10s»" Tag="10"  Click="Forward10Button_Click" PointerPressed="Forward10Button_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Jump 10s fwd (wheel = ±10s, right-click for auto-repeat)" />
+            <Button Content="1m»"  Tag="60"  Click="Forward60Button_Click" PointerPressed="Forward60Button_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Jump 1 minute fwd (wheel = ±1m, right-click for auto-repeat)" />
+
+            <Border Classes="tx-sep" />
+
+            <!-- ─── Segment edit ─────────────────────────────────────── -->
+            <Button Content="[ in (S)"  Tag="60" Click="SetInButton_Click"
+                    PointerPressed="SetInButton_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Set in-point at playhead (S) — wheel = ±1m, right-click = jump +1m" />
+            <Button Content="] out (E)" Tag="60" Click="SetOutButton_Click"
+                    PointerPressed="SetOutButton_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Set out-point at playhead (E) — wheel = ±1m, right-click = jump +1m" />
+            <Button Content="+ seg (A)" Tag="60" Click="AddSegmentButton_Click"
+                    PointerPressed="AddSegmentButton_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Add new segment at playhead (A) — wheel = ±1m, right-click = jump +1m" />
+
+            <Border Classes="tx-sep" />
+
+            <!-- ─── Cut / queue actions ──────────────────────────────── -->
+            <Button x:Name="CutButton" Classes="Primary Solid"
+                    Content="✂ Cut (C)" Tag="60" Click="CutButton_Click"
+                    PointerPressed="CutButton_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    ToolTip.Tip="Cut the most recent segment now (C) — wheel = ±1m, right-click = jump +1m" />
+            <Button x:Name="NextFileButton" Content="Next ▶▶"
+                    Tag="60" Click="NextFileButton_Click"
+                    PointerPressed="NextFileButton_PointerPressed"
+                    PointerWheelChanged="JumpButton_Wheel"
+                    IsEnabled="False"
+                    ToolTip.Tip="Skip to the next file in the playlist (without cutting) — wheel = ±1m, right-click = jump +1m" />
+
+            <Border Classes="tx-sep" />
+
+            <!-- ─── Destructive ──────────────────────────────────────── -->
+            <Button x:Name="DeleteFileButton" Classes="destructive"
+                    Content="🗑 Delete file" FontSize="12"
+                    IsEnabled="False"
+                    Click="DeleteFileButton_Click"
+                    PointerPressed="DeleteFileButton_PointerPressed"
+                    ToolTip.Tip="Permanently delete the current file and skip to the next one (right-click = jump +1m)" />
+          </StackPanel>
+        </Grid>
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>

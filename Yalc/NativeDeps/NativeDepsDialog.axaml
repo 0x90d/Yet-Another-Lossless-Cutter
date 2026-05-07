@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="YetAnotherLosslessCutter.NativeDeps.NativeDepsDialog"
+        Title="Yalc — first run setup"
+        Icon="avares://Yalc/Assets/Icon.ico"
+        Width="540" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource SemiColorBackground0}">
+
+  <Grid RowDefinitions="*,Auto">
+    <StackPanel Margin="20,20,20,12" Spacing="10">
+      <TextBlock x:Name="HeadlineText"
+                 FontSize="14" FontWeight="SemiBold"
+                 Foreground="#f0f0f0" />
+
+      <TextBlock x:Name="MessageText"
+                 Foreground="#cccccc" FontSize="12"
+                 TextWrapping="Wrap" />
+
+      <Border x:Name="ProgressCard"
+              Background="{DynamicResource SemiColorBackground1}"
+              CornerRadius="6" Padding="12,10"
+              IsVisible="False">
+        <StackPanel Spacing="6">
+          <TextBlock x:Name="ProgressStatusText"
+                     Foreground="#dddddd" FontSize="12" />
+          <ProgressBar x:Name="ProgressBar"
+                       Minimum="0" Maximum="100" Value="0"
+                       Height="8" />
+          <TextBlock x:Name="ProgressBytesText"
+                     Foreground="#888888" FontSize="11" />
+        </StackPanel>
+      </Border>
+
+      <SelectableTextBlock x:Name="DetailText"
+                           Foreground="#999999"
+                           FontFamily="Consolas, 'Courier New', monospace"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           IsVisible="False" />
+    </StackPanel>
+
+    <Grid Grid.Row="1" Background="{DynamicResource SemiColorBackground1}"
+          ColumnDefinitions="*,Auto,Auto">
+      <Button Grid.Column="1" x:Name="SecondaryButton"
+              Content="Skip" Click="Secondary_Click"
+              Margin="6,12" Padding="20,6" />
+      <Button Grid.Column="2" x:Name="PrimaryButton"
+              Classes="Primary Solid"
+              Content="Download" Click="Primary_Click" IsDefault="True"
+              Margin="6,12,14,12" Padding="20,6" />
+    </Grid>
+  </Grid>
+</Window>

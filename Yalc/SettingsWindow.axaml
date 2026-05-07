@@ -1,0 +1,137 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="using:YetAnotherLosslessCutter"
+        mc:Ignorable="d" d:DesignWidth="540" d:DesignHeight="640"
+        x:Class="YetAnotherLosslessCutter.SettingsWindow"
+        x:DataType="local:Settings"
+        DataContext="{x:Static local:Settings.Instance}"
+        Title="Settings"
+        Icon="avares://Yalc/Assets/Icon.ico"
+        Width="540" Height="640"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SemiColorBackground0}">
+
+  <Window.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource SemiColorBackground1}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="16,12" />
+      <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#f0f0f0" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <!-- Hide default On/Off labels — the descriptive Content text is enough. -->
+    <Style Selector="ToggleSwitch">
+      <Setter Property="OffContent" Value="" />
+      <Setter Property="OnContent" Value="" />
+      <Setter Property="Foreground" Value="#dddddd" />
+      <Setter Property="Margin" Value="0,2" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="#cccccc" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer Grid.Row="0">
+      <StackPanel x:Name="SettingsRoot" Margin="20,16" Spacing="0">
+
+        <!-- Cutting -->
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <TextBlock Text="Cutting" Classes="section" />
+            <ToggleSwitch Content="Remove audio" IsChecked="{Binding RemoveAudio}" />
+            <ToggleSwitch Content="Merge segments" IsChecked="{Binding MergeSegments}" />
+            <ToggleSwitch Content="Include all streams" IsChecked="{Binding IncludeAllStreams}" />
+            <ToggleSwitch Content="Delete source file after done" IsChecked="{Binding DeleteSourceFileAfterDone}" />
+            <ToggleSwitch Content="Low cutting process priority"
+                          IsChecked="{Binding LowCuttingProcessPriority}"
+                          ToolTip.Tip="Run ffmpeg at BelowNormal priority so cutting doesn't fight your foreground apps for CPU." />
+          </StackPanel>
+        </Border>
+
+        <!-- Output -->
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <TextBlock Text="Output" Classes="section" />
+            <ToggleSwitch Content="Save to source folder" IsChecked="{Binding SaveToSourceFolder}" />
+            <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+              <TextBox Grid.Column="0"
+                       Text="{Binding OutputDirectory}"
+                       PlaceholderText="Output directory…"
+                       IsEnabled="{Binding !SaveToSourceFolder}" />
+              <Button Grid.Column="1" Content="…"
+                      Click="PickOutputDir_Click"
+                      Padding="14,4" Margin="6,0,0,0"
+                      IsEnabled="{Binding !SaveToSourceFolder}"
+                      ToolTip.Tip="Pick output folder" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- Queue -->
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <TextBlock Text="Queue" Classes="section" />
+            <ToggleSwitch Content="Auto-start queue when cutting" IsChecked="{Binding AutoStartQueue}" />
+            <ToggleSwitch Content="Remove finished segments from queue" IsChecked="{Binding RemoveFinishedSegments}" />
+            <ToggleSwitch Content="Shutdown PC when queue is done"
+                          IsChecked="{Binding ShutdownWhenDone}"
+                          ToolTip.Tip="Schedules a Windows shutdown after a 15s confirmation countdown." />
+          </StackPanel>
+        </Border>
+
+        <!-- Preview &amp; Timeline -->
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <TextBlock Text="Preview &amp; Timeline" Classes="section" />
+            <ToggleSwitch Content="Generate timeline frames"
+                          IsChecked="{Binding GenerateTimelineFrames}"
+                          ToolTip.Tip="Off = skip ffmpeg thumbnail strip on the timeline (faster file open on slow disks)" />
+            <ToggleSwitch Content="Generate audio waveform"
+                          IsChecked="{Binding GenerateWaveform}"
+                          ToolTip.Tip="On = decode audio peaks via ffmpeg and overlay a translucent waveform on the timeline. Helps spot dialogue boundaries and silences. Adds a few seconds to file open." />
+            <ToggleSwitch Content="Always mute preview audio"
+                          IsChecked="{Binding AlwaysMuteAudio}"
+                          ToolTip.Tip="Fast seeking, no playback sound." />
+            <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,2">
+              <TextBlock Grid.Column="0" Classes="label" Text="Auto-seek delay (ms)" />
+              <NumericUpDown Grid.Column="1"
+                             Value="{Binding AutoSeekDelayMs}"
+                             Minimum="0" Maximum="1000" Increment="50"
+                             Width="140"
+                             ToolTip.Tip="Pause between auto-repeat seek firings. Larger = easier to read what you're scrubbing past; smaller = snappier." />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- Window -->
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <TextBlock Text="Window" Classes="section" />
+            <ToggleSwitch Content="Open maximized" IsChecked="{Binding OpenMaximized}" />
+            <ToggleSwitch Content="Show confirmation prompts" IsChecked="{Binding ShowConfirmationPrompts}" />
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <Grid Grid.Row="1" Background="{DynamicResource SemiColorBackground1}"
+          ColumnDefinitions="*,Auto" Margin="0">
+      <TextBlock Grid.Column="0" Text="Settings auto-save when changed."
+                 Foreground="#888888" FontSize="11"
+                 VerticalAlignment="Center" Margin="20,0" />
+      <Button Grid.Column="1" Classes="Primary Solid"
+              Content="Close" Click="Close_Click"
+              Margin="14,12" Padding="20,6" />
+    </Grid>
+  </Grid>
+</Window>

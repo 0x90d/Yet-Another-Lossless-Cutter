@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Yalc
+GenericName=Lossless Video Cutter
+Comment=Frame-accurate lossless video cutter
+Exec=/opt/yalc/Yalc
+Icon=/opt/yalc/icon.png
+Type=Application
+Categories=AudioVideo;Video;
+Keywords=video;cut;trim;lossless;ffmpeg;mpv;
+StartupNotify=true

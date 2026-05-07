@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="using:YetAnotherLosslessCutter"
+        mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="460"
+        x:Class="YetAnotherLosslessCutter.OpenFolderWindow"
+        x:DataType="local:OpenFromFolderViewModel"
+        Title="Open from folder"
+        Icon="avares://Yalc/Assets/Icon.ico"
+        Width="500" Height="460"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SemiColorBackground0}">
+
+  <Window.Styles>
+    <Style Selector="ToggleSwitch">
+      <Setter Property="OffContent" Value="" />
+      <Setter Property="OnContent" Value="" />
+      <Setter Property="Foreground" Value="#dddddd" />
+      <Setter Property="Margin" Value="0,2" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="#cccccc" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#f0f0f0" />
+      <Setter Property="Margin" Value="0,12,0,6" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer Grid.Row="0">
+      <StackPanel Margin="20,16" Spacing="0">
+
+        <TextBlock Text="Folder" Classes="section" Margin="0,0,0,6" />
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox Grid.Column="0"
+                   Text="{Binding FolderPath}"
+                   PlaceholderText="Pick a folder…" />
+          <Button Grid.Column="1" Content="…"
+                  Click="Browse_Click"
+                  Padding="14,4" Margin="6,0,0,0"
+                  ToolTip.Tip="Browse" />
+        </Grid>
+
+        <TextBlock Text="Filter" Classes="section" />
+        <ToggleSwitch Content="Include sub-folders" IsChecked="{Binding IncludeSubFolders}" />
+        <ToggleSwitch Content="Include .ts files" IsChecked="{Binding IncludeTSFiles}" />
+        <ToggleSwitch Content="Filter by file size (MB)" IsChecked="{Binding UseFileSize}" />
+        <Grid ColumnDefinitions="Auto,*,Auto,*" Margin="0,4">
+          <TextBlock Grid.Column="0" Classes="label" Text="Min" Margin="0,0,8,0" />
+          <NumericUpDown Grid.Column="1"
+                         Value="{Binding FileSizeMin}"
+                         Minimum="0" Maximum="999999999"
+                         IsEnabled="{Binding UseFileSize}" />
+          <TextBlock Grid.Column="2" Classes="label" Text="Max" Margin="14,0,8,0" />
+          <NumericUpDown Grid.Column="3"
+                         Value="{Binding FileSizeMax}"
+                         Minimum="0" Maximum="999999999"
+                         IsEnabled="{Binding UseFileSize}" />
+        </Grid>
+
+        <TextBlock Text="Sort" Classes="section" />
+        <Grid ColumnDefinitions="Auto,*">
+          <TextBlock Grid.Column="0" Classes="label" Text="Sort by" Margin="0,0,12,0" />
+          <ComboBox Grid.Column="1" x:Name="SortModeCombo"
+                    SelectedItem="{Binding SortMode}"
+                    HorizontalAlignment="Stretch" />
+        </Grid>
+
+        <TextBlock
+          Text="Files created in the last 6 hours are skipped — guards against picking up still-recording captures."
+          Foreground="#888" FontSize="11" Margin="0,16,0,0" TextWrapping="Wrap" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <Grid Grid.Row="1" Background="{DynamicResource SemiColorBackground1}"
+          ColumnDefinitions="*,Auto,Auto" Margin="0">
+      <TextBlock Grid.Column="0"
+                 Text="Defaults from Settings; OK saves your changes."
+                 Foreground="#888888" FontSize="11"
+                 VerticalAlignment="Center" Margin="20,0" />
+      <Button Grid.Column="1" Content="Cancel" Click="Cancel_Click"
+              Margin="6,12" Padding="20,6" />
+      <Button Grid.Column="2" Classes="Primary Solid"
+              Content="OK" Click="Ok_Click" IsDefault="True"
+              Margin="6,12,14,12" Padding="20,6" />
+    </Grid>
+  </Grid>
+</Window>

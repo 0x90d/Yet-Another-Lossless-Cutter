@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="YetAnotherLosslessCutter.CountdownDialog"
+        Title="Countdown"
+        Icon="avares://Yalc/Assets/Icon.ico"
+        Width="460" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SemiColorBackground0}">
+
+  <Grid RowDefinitions="*,Auto" MinHeight="120">
+    <TextBlock x:Name="MessageBlock"
+               Margin="20,20,20,12"
+               Foreground="#f0f0f0" FontSize="13"
+               TextWrapping="Wrap" />
+    <Grid Grid.Row="1" Background="{DynamicResource SemiColorBackground1}"
+          ColumnDefinitions="*,Auto">
+      <Button Grid.Column="1" Classes="Primary Solid"
+              Content="Cancel" Click="Cancel_Click" IsDefault="True"
+              Margin="14,12" Padding="20,6" />
+    </Grid>
+  </Grid>
+</Window>

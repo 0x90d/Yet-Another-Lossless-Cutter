@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="YetAnotherLosslessCutter.InfoDialog"
+        Title="Notice"
+        Icon="avares://Yalc/Assets/Icon.ico"
+        Width="500" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SemiColorBackground0}">
+
+  <Grid RowDefinitions="*,Auto" MinHeight="120">
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="20,20,20,12">
+      <TextBlock x:Name="IconBlock"
+                 Grid.Column="0" FontSize="32"
+                 Margin="0,0,16,0"
+                 VerticalAlignment="Top"
+                 Text="⚠" Foreground="#ffb84d" />
+      <TextBlock x:Name="MessageBlock"
+                 Grid.Column="1"
+                 Foreground="#f0f0f0" FontSize="13"
+                 TextWrapping="Wrap"
+                 VerticalAlignment="Center" />
+    </Grid>
+    <Grid Grid.Row="1" Background="{DynamicResource SemiColorBackground1}"
+          ColumnDefinitions="*,Auto">
+      <Button Grid.Column="1" Classes="Primary Solid"
+              Content="OK" Click="Ok_Click" IsDefault="True" IsCancel="True"
+              Margin="14,12" Padding="20,6" />
+    </Grid>
+  </Grid>
+</Window>

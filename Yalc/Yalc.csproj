@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <RootNamespace>YetAnotherLosslessCutter</RootNamespace>
+    <AssemblyName>Yalc</AssemblyName>
+    <!-- Embeds the .ico into the produced exe so Explorer / taskbar / Alt-Tab
+         show the YALC icon instead of the .NET default. -->
+    <ApplicationIcon>Assets\Icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Same .ico exposed as an AvaloniaResource so the Window can use it via
+       avares://. Different mechanism than ApplicationIcon — the exe icon is a
+       Windows resource, this is for in-app rendering (window chrome). -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\Icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.0">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Semi.Avalonia" Version="12.0.1" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0" />
+    <!-- SharpCompress provides .7z extraction for the libmpv auto-downloader.
+         shinchiro's mpv-dev archive is the only well-maintained Windows libmpv
+         source and ships .7z exclusively; .NET has no built-in 7z reader. -->
+    <PackageReference Include="SharpCompress" Version="0.39.0" />
+  </ItemGroup>
+
+  <!-- Plugin abstractions library — defines the IOutputPathPlugin /
+       ISettingsContribution / IStatusBadgeProvider / IFilePickerFilter contracts and the
+       PluginHost registry. Always referenced. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Yalc.Plugins.Abstractions\Yalc.Plugins.Abstractions.csproj" />
+  </ItemGroup>
+
+  <!-- Plugin glob: any sibling .csproj dropped into ../Plugins/<name>/ is auto-included.
+       The Plugins/ folder is gitignored (except its README.md), so a public clone has no
+       plugins by default. To add a plugin, drop its source folder under Plugins/ and
+       rebuild. AOT-clean: every plugin assembly is part of the build graph at compile time,
+       so its [ModuleInitializer] runs at startup just like any other referenced assembly. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Plugins\**\*.csproj" />
+  </ItemGroup>
+
+  <!-- Native dependencies (libmpv + FFmpeg) are no longer bundled at build time.
+       NativeDepsDialog fetches them from upstream on first run and drops them
+       next to Yalc.exe. See Yalc/NativeDeps/. -->
+</Project>

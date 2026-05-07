@@ -1,0 +1,124 @@
+name: Build releases
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Delete old release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The "latest" rolling tag is recreated each push. Wipe its assets first so
+        # the fresh OS-specific archives replace whatever was there.
+        run: |
+          if gh release view latest >/dev/null 2>&1; then
+            gh release view latest --json assets --jq '.assets[].name' | while read -r asset; do
+              gh release delete-asset latest "$asset" --yes
+            done
+          fi
+
+  build:
+    needs: cleanup
+
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: ['windows', 'linux', 'linuxarm64', 'macOS', 'macOSarm64']
+        include:
+          - kind: windows
+            os: windows-latest
+            target: win-x64
+          - kind: linux
+            os: ubuntu-latest
+            target: linux-x64
+          - kind: linuxarm64
+            os: ubuntu-latest
+            target: linux-arm64
+          - kind: macOS
+            os: macos-latest
+            target: osx-x64
+          - kind: macOSarm64
+            os: macos-latest
+            target: osx-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Declare some variables
+        id: vars
+        shell: bash
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # No native-deps bundling. The app fetches libmpv (Windows) on first run via
+      # NativeDepsDialog; Linux/macOS users install via their package manager.
+
+      - name: Build
+        shell: bash
+        run: |
+          dotnet publish Yalc/Yalc.csproj \
+            -c Release \
+            -v q \
+            --self-contained \
+            -r "${{ matrix.target }}" \
+            -o "publish"
+
+      - name: Pack
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            win-x64)
+              7z a -tzip "Yalc-${{ matrix.target }}.zip" "./publish/*"
+              ;;
+            linux-x64|linux-arm64)
+              cp "Yalc/Assets/Linux/icon.png" "publish/icon.png"
+              cp "Yalc/Assets/Linux/yalc.desktop" "publish/yalc.desktop"
+              tar czvf "Yalc-${{ matrix.target }}.tar.gz" -C publish .
+              ;;
+            osx-x64|osx-arm64)
+              mkdir -p "Yalc.app/Contents/MacOS"
+              mkdir -p "Yalc.app/Contents/Resources"
+              cp -r publish/. "Yalc.app/Contents/MacOS/"
+              cp "Yalc/Assets/macOS/icon.icns" "Yalc.app/Contents/Resources/icon.icns"
+              cp "Yalc/Assets/macOS/Info.plist" "Yalc.app/Contents/Info.plist"
+              chmod +x "Yalc.app/Contents/MacOS/Yalc"
+              # Ad-hoc codesign required by macOS 14+ Library Validation, even
+              # though we don't have a paid Developer ID. The four entitlements
+              # mirror VDF's working bundle.
+              codesign --force --deep --sign - \
+                --entitlements "Yalc/Assets/macOS/entitlements.plist" \
+                "Yalc.app"
+              codesign --verify --deep --strict --verbose=2 "Yalc.app"
+              tar czvf "Yalc-${{ matrix.target }}.tar.gz" "Yalc.app"
+              ;;
+          esac
+
+      - name: Publish
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          files: |
+            Yalc-*
+          body: |
+            Daily build. Attachments are auto-replaced on every push to `main`.
+            Last build based on ${{ steps.vars.outputs.sha_short }}.
+
+            On first run Yalc will prompt to download libmpv (Windows) automatically.
+            Linux / macOS users need `mpv` and `ffmpeg` from their package manager.
+            macOS bundle is experimental — video playback is not yet supported.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

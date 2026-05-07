@@ -1,0 +1,26 @@
+# Build artifacts
+bin/
+obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Runtime state — written next to the produced exe
+**/Settings.json
+**/last-error.log
+**/lastfile.txt
+**/queue.json
+**/lastsession.json
+**/camshow-router-settings.json
+
+# Plugins folder is gitignored except its README — drop your own plugin folders here
+# (they'll be picked up automatically by the main csproj's ProjectReference glob).
+Plugins/*
+!Plugins/README.md
+
+# Local-only solution variants (e.g. YALC-AvaloniaSpike.local.sln that adds
+# the user's private plugin to the solution explorer)
+*.local.sln
