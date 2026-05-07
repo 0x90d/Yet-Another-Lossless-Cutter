@@ -30,11 +30,17 @@ public class MpvOpenGlVideoView : OpenGlControlBase
 
     static MpvOpenGlVideoView()
     {
-        // When Player is assigned (after OnOpenGlInit), kick a render so we attach
-        // the render context on the GL thread. If GL isn't initialized yet, this
-        // is a cheap no-op and OnOpenGlRender will run anyway when Avalonia is ready.
-        PlayerProperty.Changed.AddClassHandler<MpvOpenGlVideoView>((view, _) =>
-            view.RequestNextFrameRendering());
+        // Initialize the player eagerly the moment it's assigned — the mpv handle
+        // doesn't need a GL context, just a UI thread. The render *context* still
+        // attaches lazily on the GL thread (see OnOpenGlRender) because that does
+        // need a current GL context. Without this eager init the user could click
+        // Open before any frame rendered and hit "MpvPlayer not initialized".
+        PlayerProperty.Changed.AddClassHandler<MpvOpenGlVideoView>((view, e) =>
+        {
+            if (e.NewValue is MpvPlayer p && !p.IsInitialized)
+                p.Initialize();
+            view.RequestNextFrameRendering();
+        });
     }
 
     protected override void OnOpenGlRender(GlInterface gl, int fb)
@@ -42,6 +48,7 @@ public class MpvOpenGlVideoView : OpenGlControlBase
         var player = Player;
         if (player is null) return;
 
+        // Defensive: should already be initialized by the property-changed handler.
         if (!player.IsInitialized) player.Initialize();
 
         if (!player.HasRenderContext)
