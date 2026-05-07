@@ -93,6 +93,24 @@ public sealed class MpvPlayer : IDisposable
         LibMpv.SetOptionString(_handle, "hwdec", "auto-safe");      // hw decode where safe
         LibMpv.SetOptionString(_handle, "keep-open", "always");     // don't close on EOF
 
+        // macOS arm64 hardened-runtime kills the process with "Code Signature
+        // Invalid" when libluajit performs its W→X JIT page transitions. mpv's
+        // bundled scripts (stats / console / auto_profiles / select / commands /
+        // context_menu / positioning / ytdl_hook) all run through luajit, so
+        // suppress their auto-load. We drive the UI ourselves and don't surface
+        // any of these features, so nothing user-visible is lost.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            LibMpv.SetOptionString(_handle, "load-osd-console", "no");
+            LibMpv.SetOptionString(_handle, "load-stats-overlay", "no");
+            LibMpv.SetOptionString(_handle, "load-auto-profiles", "no");
+            LibMpv.SetOptionString(_handle, "load-select", "no");
+            LibMpv.SetOptionString(_handle, "load-commands", "no");
+            LibMpv.SetOptionString(_handle, "load-context-menu", "no");
+            LibMpv.SetOptionString(_handle, "load-positioning", "no");
+            LibMpv.SetOptionString(_handle, "ytdl", "no");
+        }
+
         // Editor-style: load files paused on the first frame. User clicks Play to play.
         LibMpv.SetOptionString(_handle, "pause", "yes");
 
