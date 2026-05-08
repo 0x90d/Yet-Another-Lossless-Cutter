@@ -42,6 +42,12 @@ public partial class MainWindow : Window
     // In-memory undo / redo for segment mutations. Cleared on file change.
     private readonly Undo.UndoStack _undo = new();
 
+    // Precise keyframe timestamps (ffprobe-extracted, populated in background after
+    // file load). When loaded, Alt+←/→ use these for exact keyframe navigation;
+    // while loading, fall back to mpv's approximate seek+keyframes.
+    private readonly Navigation.KeyframeIndex _keyframes = new();
+    private CancellationTokenSource? _keyframeIndexCts;
+
     // Active silence-detection scan. Click-while-running cancels.
     private CancellationTokenSource? _silenceCts;
 
@@ -199,6 +205,22 @@ public partial class MainWindow : Window
             SetLoopSegment(null);
             _lastReportedPos = 0;
             _undo.Clear();
+
+            // Drop any stale keyframe index and start a fresh ffprobe scan in the
+            // background. Alt+←/→ falls back to approximate mode while it runs.
+            _keyframeIndexCts?.Cancel();
+            _keyframes.Clear();
+            if (!string.IsNullOrEmpty(_currentFile))
+            {
+                var cts = new CancellationTokenSource();
+                _keyframeIndexCts = cts;
+                var path = _currentFile;
+                _ = Task.Run(async () =>
+                {
+                    try { await _keyframes.LoadAsync(path, cts.Token); }
+                    catch { /* ffprobe missing or scan failed — Alt+←/→ stays approximate */ }
+                }, cts.Token);
+            }
             // Surface any chapter markers the file ships with. Most stream-recorder
             // .ts files have none; mainstream MKV/MP4s usually do.
             Timeline.Markers.Clear();
@@ -2433,9 +2455,9 @@ public partial class MainWindow : Window
             case Key.Y when (e.KeyModifiers & KeyModifiers.Control) != 0:
                 _undo.Redo(); e.Handled = true; break;
             case Key.Left when (e.KeyModifiers & KeyModifiers.Alt) != 0:
-                _player.SeekKeyframeRelative(-1.0); e.Handled = true; break;
+                StepToKeyframe(forward: false); e.Handled = true; break;
             case Key.Right when (e.KeyModifiers & KeyModifiers.Alt) != 0:
-                _player.SeekKeyframeRelative(+1.0); e.Handled = true; break;
+                StepToKeyframe(forward: true); e.Handled = true; break;
             case Key.Left: Seek(-1); e.Handled = true; break;
             case Key.Right: Seek(+1); e.Handled = true; break;
             case Key.OemComma: _player.FrameBackStep(); e.Handled = true; break;
@@ -2469,6 +2491,26 @@ public partial class MainWindow : Window
         if (!_player.IsInitialized) return;
         _player.PlaybackSpeed = 1.0;
         SetStatus("speed: 1×");
+    }
+
+    /// <summary>
+    /// Step to the previous or next keyframe. Uses the precise ffprobe-extracted
+    /// index when it's loaded; otherwise falls back to mpv's approximate
+    /// seek-with-keyframes mode (which can stick on long-GOP files).
+    /// </summary>
+    private void StepToKeyframe(bool forward)
+    {
+        if (!_player.IsInitialized) return;
+        if (_keyframes.IsLoaded)
+        {
+            var t = forward ? _keyframes.NextAfter(_player.TimePos)
+                            : _keyframes.PrevBefore(_player.TimePos);
+            if (t.HasValue) _player.SeekAbsolute(t.Value, exact: true);
+        }
+        else
+        {
+            _player.SeekKeyframeRelative(forward ? 1.0 : -1.0);
+        }
     }
 
     /// <summary>

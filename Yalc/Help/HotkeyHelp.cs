@@ -23,7 +23,7 @@ public static class HotkeyHelp
             new("Space", "Play / pause"),
             new("← / →", "Seek ±1 second"),
             new(", / .", "Step one frame back / forward"),
-            new("Alt + ← / →", "Step to previous / next keyframe (≈)"),
+            new("Alt + ← / →", "Step to previous / next keyframe"),
             new("L", "Loop segment under playhead (toggle)"),
             new("P", "Save current frame as PNG"),
             new("[ / ]", "Slow down / speed up playback"),
