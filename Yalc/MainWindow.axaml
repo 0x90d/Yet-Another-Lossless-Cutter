@@ -10,6 +10,7 @@
         Title="YetAnotherLosslessCutter"
         Icon="avares://Yalc/Assets/Icon.ico"
         Width="1280" Height="780"
+        MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource SemiColorBackground0}"
         dd:DragDrop.AllowDrop="True">
