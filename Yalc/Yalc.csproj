@@ -53,6 +53,17 @@
     <ProjectReference Include="..\Plugins\**\*.csproj" />
   </ItemGroup>
 
+  <!-- Plugins register themselves via [ModuleInitializer]; nothing in core code statically
+       references plugin types. Under PublishAot the trimmer treats the entire plugin
+       assembly as unreachable and drops it — including the module initializer that
+       would have called PluginHost.Register. Marking each plugin as a TrimmerRootAssembly
+       (derived from the same glob the ProjectReference above uses) tells the linker
+       "keep these whole" so the registration runs. Empty glob = empty list = no-op. -->
+  <ItemGroup>
+    <_PluginAssembly Include="..\Plugins\**\*.csproj" />
+    <TrimmerRootAssembly Include="@(_PluginAssembly->'%(Filename)')" />
+  </ItemGroup>
+
   <!-- Native dependencies (libmpv + FFmpeg) are no longer bundled at build time.
        NativeDepsDialog fetches them from upstream on first run and drops them
        next to Yalc.exe. See Yalc/NativeDeps/. -->
