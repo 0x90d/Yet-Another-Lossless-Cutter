@@ -149,8 +149,12 @@ public partial class MainWindow : Window
             // .ts files have none; mainstream MKV/MP4s usually do.
             Timeline.Markers.Clear();
             foreach (var t in _player.GetChapterTimes()) Timeline.Markers.Add(t);
+            // The "loading…" hint set in LoadCurrentPlaylistItem was previously
+            // overwritten by the timeline thumbnail status; now those live on a
+            // separate channel, so clear it explicitly here.
+            SetStatus(null);
             if (Settings.Instance.GenerateTimelineFrames)
-                SetStatus("loaded — generating thumbnails…");
+                SetThumbnailStatus("loaded — generating thumbnails…");
             if (_currentFile != null)
             {
                 // Waveform runs in parallel — independent ffmpeg pipe, no shared state
@@ -161,7 +165,7 @@ public partial class MainWindow : Window
         });
         _player.EndFile += () => Dispatcher.UIThread.Post(() =>
         {
-            SetStatus(null);
+            SetThumbnailStatus(null);
             // Belt-and-suspenders for auto-repeat: if mpv reaches EOF while auto-repeat
             // is on, stop firing so we don't keep nudging the seek past the boundary.
             // The PlaybackRestart-side direction check usually catches this first, but
@@ -503,11 +507,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Updates the timeline overlay text. Use null/empty to clear. Replaces the old
-    /// top-left StatusLabel — frame-generation progress and other transient hints
-    /// land here directly above the strip.
+    /// Updates the bottom status bar (cut/queue/drop/file errors). The timeline
+    /// overlay is reserved for thumbnail progress — see SetThumbnailStatus.
     /// </summary>
     private void SetStatus(string? text)
+    {
+        WindowStatusLabel.Text = string.IsNullOrEmpty(text) ? null : text;
+    }
+
+    /// <summary>Thumbnail-loading progress shown directly above the timeline strip.</summary>
+    private void SetThumbnailStatus(string? text)
     {
         Timeline.StatusText = string.IsNullOrEmpty(text) ? null : text;
     }
@@ -602,13 +611,13 @@ public partial class MainWindow : Window
 
         if (duration <= 0)
         {
-            SetStatus(null);
+            SetThumbnailStatus(null);
             return;
         }
 
         if (!Settings.Instance.GenerateTimelineFrames)
         {
-            SetStatus(null);
+            SetThumbnailStatus(null);
             return;
         }
 
@@ -621,9 +630,13 @@ public partial class MainWindow : Window
             await EnsureExtractorLoadedAsync(path, ct);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var progress = new Progress<double>(p => SetStatus($"base thumbnails… {p:P0}"));
+            // Progress<T>.Report posts asynchronously to the UI thread; the final 100%
+            // callback can land after SetStatus(null) and re-pin the message. Gate it.
+            var done = false;
+            var progress = new Progress<double>(p => { if (!done) SetThumbnailStatus($"base thumbnails… {p:P0}"); });
             var frames = await _extractor.ExtractRangeAsync(0, duration,
                 count: BaseLayerCount, progress: progress, ct: ct);
+            done = true;
             sw.Stop();
             if (ct.IsCancellationRequested) return;
             // Identity guard: the file may have changed between the last cancellation
@@ -631,12 +644,12 @@ public partial class MainWindow : Window
             if (_currentFile != path) return;
 
             Timeline.BaseFrames = frames;
-            SetStatus(null);
+            SetThumbnailStatus(null);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            SetStatus("thumbnail error: " + ex.Message);
+            SetThumbnailStatus("thumbnail error: " + ex.Message);
         }
     }
 
@@ -653,7 +666,7 @@ public partial class MainWindow : Window
         var zoom = _duration / viewDur;
         if (zoom < ZoomLayerThreshold)
         {
-            SetStatus(null);
+            SetThumbnailStatus(null);
             return;
         }
 
@@ -668,7 +681,7 @@ public partial class MainWindow : Window
         // Already covered well enough by an existing layer (base or any cached zoom)?
         if (IsViewCoveredByCachedLayer(viewStart, viewEnd, requiredSecondsPerFrame))
         {
-            SetStatus(null);
+            SetThumbnailStatus(null);
             return;
         }
 
@@ -687,12 +700,18 @@ public partial class MainWindow : Window
         {
             await EnsureExtractorLoadedAsync(path, ct);
 
-            SetStatus($"zoom thumbs ({zoom:0.#}×, {count} frames)…");
+            SetThumbnailStatus($"zoom thumbs ({zoom:0.#}×, {count} frames)…");
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            // See base-thumbnail path: gate late Progress<T> callbacks so the final 100%
+            // report can't re-pin the status after we've cleared it.
+            var done = false;
             var progress = new Progress<double>(p =>
-                SetStatus($"zoom thumbs ({zoom:0.#}×, {count} frames)… {p:P0}"));
+            {
+                if (!done) SetThumbnailStatus($"zoom thumbs ({zoom:0.#}×, {count} frames)… {p:P0}");
+            });
             var frames = await _extractor.ExtractRangeAsync(viewStart, viewEnd,
                 count: count, progress: progress, ct: ct);
+            done = true;
             sw.Stop();
             if (ct.IsCancellationRequested) return;
             // Identity guard: file may have changed mid-extraction (see GenerateThumbnailsAsync).
@@ -700,12 +719,12 @@ public partial class MainWindow : Window
 
             Timeline.AddZoomLayer(frames);
             Timeline.TrimZoomLayers(MaxZoomLayers);
-            SetStatus(null);
+            SetThumbnailStatus(null);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            SetStatus("zoom thumbnail error: " + ex.Message);
+            SetThumbnailStatus("zoom thumbnail error: " + ex.Message);
         }
     }
 
@@ -1204,7 +1223,7 @@ public partial class MainWindow : Window
         // FileLoaded event + duration-probe wait, which is far too late).
         _baseThumbCts?.Cancel();
         _zoomThumbCts?.Cancel();
-        SetStatus(null);
+        SetThumbnailStatus(null);
         ResetMediaInfo();
         UpdateNextFileButtonState();
         UpdateDeleteFileButtonState();

@@ -175,7 +175,7 @@
     </Style>
   </Window.Styles>
 
-  <Grid RowDefinitions="Auto,*">
+  <Grid RowDefinitions="Auto,*,Auto">
 
     <!-- Top bar -->
     <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto"
@@ -480,5 +480,15 @@
         </Grid>
       </Grid>
     </Grid>
+
+    <!-- Bottom status bar: general transient hints (cut/queue/drop/file errors).
+         Thumbnail-loading progress lives on the timeline overlay, not here. -->
+    <Border Grid.Row="2" Background="{DynamicResource SemiColorBackground1}"
+            BorderBrush="#2a2a2a" BorderThickness="0,1,0,0">
+      <TextBlock x:Name="WindowStatusLabel"
+                 Foreground="#aaaaaa" FontSize="11"
+                 Margin="10,3" MinHeight="16"
+                 TextTrimming="CharacterEllipsis" />
+    </Border>
   </Grid>
 </Window>
