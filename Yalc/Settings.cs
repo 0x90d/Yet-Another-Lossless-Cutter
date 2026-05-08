@@ -24,6 +24,7 @@ namespace YetAnotherLosslessCutter;
     NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals)]
 [JsonSerializable(typeof(Settings))]
 [JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 internal partial class SettingsJsonContext : JsonSerializerContext { }
 
 /// <summary>
@@ -291,6 +292,51 @@ public sealed class Settings : ViewModelBase
 
     private bool _showFrameCaptureButton = true;
     public bool ShowFrameCaptureButton { get => _showFrameCaptureButton; set => Set(ref _showFrameCaptureButton, value); }
+
+    // ----- Hotkey customization -----
+
+    private Dictionary<string, string> _hotkeyBindings = new();
+    /// <summary>
+    /// Per-action chord overrides keyed by stable action ID (see <see cref="Hotkeys.HotkeyCatalog"/>).
+    /// Value is the chord display string (e.g. "Ctrl+Z", "Alt+Left", "Space"); empty
+    /// or "(unbound)" means the action has no key binding. Missing entries fall back
+    /// to the action's catalog default. Use <see cref="SetHotkeyBinding"/> to mutate
+    /// so subscribers know to re-apply the chord map.
+    /// </summary>
+    public Dictionary<string, string> HotkeyBindings
+    {
+        get => _hotkeyBindings;
+        set
+        {
+            // Replace wholesale — used by JSON deserialization. Bypass the change
+            // event since this is normally hit during Load() before subscribers exist.
+            _hotkeyBindings = value ?? new Dictionary<string, string>();
+        }
+    }
+
+    /// <summary>
+    /// Fired whenever the hotkey binding map is mutated through
+    /// <see cref="SetHotkeyBinding"/>. The dispatcher subscribes so chord changes
+    /// in the Settings UI take effect without restarting the app.
+    /// </summary>
+    public event Action? HotkeyBindingsChanged;
+
+    /// <summary>
+    /// Set or clear the override for an action. <paramref name="chordString"/> null
+    /// removes the override (revert to catalog default); empty / "(unbound)" stores
+    /// "(unbound)" so the dispatcher disables the binding. Fires
+    /// <see cref="HotkeyBindingsChanged"/> and triggers settings auto-save.
+    /// </summary>
+    public void SetHotkeyBinding(string actionId, string? chordString)
+    {
+        if (chordString == null)
+            _hotkeyBindings.Remove(actionId);
+        else
+            _hotkeyBindings[actionId] = chordString;
+        HotkeyBindingsChanged?.Invoke();
+        // Touch a real property to flow through the existing debounced auto-save.
+        OnPropertyChanged(nameof(HotkeyBindings));
+    }
 
     // ----- File picker (Open from Folder) -----
 

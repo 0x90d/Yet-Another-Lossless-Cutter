@@ -48,6 +48,11 @@ public partial class MainWindow : Window
     private readonly Navigation.KeyframeIndex _keyframes = new();
     private CancellationTokenSource? _keyframeIndexCts;
 
+    // Action-id → handler routing for keyboard shortcuts. Catalog defaults are
+    // overlaid with user overrides from Settings.HotkeyBindings so keys can be
+    // rebound without restarting the app.
+    private readonly Hotkeys.HotkeyDispatcher _hotkeys = new();
+
     // Active silence-detection scan. Click-while-running cancels.
     private CancellationTokenSource? _silenceCts;
 
@@ -97,6 +102,10 @@ public partial class MainWindow : Window
             if (e.PropertyName is null || e.PropertyName.StartsWith("Show", StringComparison.Ordinal))
                 Dispatcher.UIThread.Post(ApplyUiVisibility);
         };
+        RegisterHotkeyHandlers();
+        _hotkeys.ApplyBindings(Settings.Instance.HotkeyBindings);
+        Settings.Instance.HotkeyBindingsChanged += () =>
+            Dispatcher.UIThread.Post(() => _hotkeys.ApplyBindings(Settings.Instance.HotkeyBindings));
 
         // Auto-save the queue on every mutation (add/remove/status change) instead
         // of only on graceful shutdown. A force-kill (debugger Stop, OS task-kill,
@@ -2437,42 +2446,15 @@ public partial class MainWindow : Window
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Help is available even before mpv is initialized — user should be able to
-        // ask "what does this do" without first loading a file.
-        if (e.Key == Key.F1) { ShowHotkeyHelp(); e.Handled = true; return; }
-        if (!_player.IsInitialized) return;
-        // Any keypress stops auto-repeat — Esc is the natural cancel,
-        // but the user is also already moving on if they're using shortcuts.
+        // Hotkey routing now goes through the dispatcher (catalog + user overrides);
+        // each handler does its own pre-checks (player init, duration, etc.) so the
+        // OnKeyDown shell stays small. StopAutoRepeat fires unconditionally — running
+        // an auto-repeat action while the user types something else is wrong either
+        // way, and the cost is one cheap field check when nothing was repeating.
         StopAutoRepeat();
-        switch (e.Key)
-        {
-            case Key.Space: _player.TogglePause(); e.Handled = true; break;
-            case Key.Z when (e.KeyModifiers & KeyModifiers.Control) != 0
-                         && (e.KeyModifiers & KeyModifiers.Shift) != 0:
-                _undo.Redo(); e.Handled = true; break;
-            case Key.Z when (e.KeyModifiers & KeyModifiers.Control) != 0:
-                _undo.Undo(); e.Handled = true; break;
-            case Key.Y when (e.KeyModifiers & KeyModifiers.Control) != 0:
-                _undo.Redo(); e.Handled = true; break;
-            case Key.Left when (e.KeyModifiers & KeyModifiers.Alt) != 0:
-                StepToKeyframe(forward: false); e.Handled = true; break;
-            case Key.Right when (e.KeyModifiers & KeyModifiers.Alt) != 0:
-                StepToKeyframe(forward: true); e.Handled = true; break;
-            case Key.Left: Seek(-1); e.Handled = true; break;
-            case Key.Right: Seek(+1); e.Handled = true; break;
-            case Key.OemComma: _player.FrameBackStep(); e.Handled = true; break;
-            case Key.OemPeriod: _player.FrameStep(); e.Handled = true; break;
-            case Key.S: SetInPoint(); e.Handled = true; break;
-            case Key.E: SetOutPoint(); e.Handled = true; break;
-            case Key.A: AddSegment(); e.Handled = true; break;
-            case Key.C: EnqueueAndStart(); e.Handled = true; break;
-            case Key.L: ToggleLoopAtPlayhead(); e.Handled = true; break;
-            case Key.P: CaptureFrame(); e.Handled = true; break;
-            case Key.OemOpenBrackets:  AdjustPlaybackSpeed(0.8); e.Handled = true; break;
-            case Key.OemCloseBrackets: AdjustPlaybackSpeed(1.25); e.Handled = true; break;
-            case Key.OemBackslash:
-            case Key.OemPipe:          ResetPlaybackSpeed(); e.Handled = true; break;
-        }
+        var chord = new Hotkeys.KeyChord(e.Key, e.KeyModifiers);
+        if (_hotkeys.Handle(chord))
+            e.Handled = true;
     }
 
     private void LoopButton_Click(object? sender, RoutedEventArgs e) => ToggleLoopAtPlayhead();
@@ -2607,8 +2589,42 @@ public partial class MainWindow : Window
     /// <summary>Open the F1 hotkey help dialog as a child of this window.</summary>
     private void ShowHotkeyHelp()
     {
-        var dlg = new Help.HotkeyHelpDialog();
+        var dlg = new Help.HotkeyHelpDialog(_hotkeys);
         _ = dlg.ShowDialog(this);
+    }
+
+    /// <summary>
+    /// Wire each catalog action to its handler. <see cref="RequirePlayer"/> wraps
+    /// handlers that need an mpv-loaded file so the dispatcher's invocation stays
+    /// uniform — actions that work without a file (Help) skip the wrapper.
+    /// </summary>
+    private void RegisterHotkeyHandlers()
+    {
+        Action RequirePlayer(Action a) => () => { if (_player.IsInitialized) a(); };
+
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.HelpDialog, ShowHotkeyHelp);
+
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.PlayPause, RequirePlayer(() => _player.TogglePause()));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.SeekBack, RequirePlayer(() => Seek(-1)));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.SeekForward, RequirePlayer(() => Seek(+1)));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.FrameBack, RequirePlayer(() => _player.FrameBackStep()));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.FrameForward, RequirePlayer(() => _player.FrameStep()));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.KeyframeBack, RequirePlayer(() => StepToKeyframe(forward: false)));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.KeyframeForward, RequirePlayer(() => StepToKeyframe(forward: true)));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.LoopToggle, RequirePlayer(ToggleLoopAtPlayhead));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.FrameCapture, RequirePlayer(CaptureFrame));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.SpeedDown, RequirePlayer(() => AdjustPlaybackSpeed(0.8)));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.SpeedUp, RequirePlayer(() => AdjustPlaybackSpeed(1.25)));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.SpeedReset, RequirePlayer(ResetPlaybackSpeed));
+
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.SetIn, RequirePlayer(SetInPoint));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.SetOut, RequirePlayer(SetOutPoint));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.AddSegment, RequirePlayer(AddSegment));
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.EnqueueAndStart, RequirePlayer(EnqueueAndStart));
+
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.Undo, () => { if (_player.IsInitialized) _undo.Undo(); });
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.Redo, () => { if (_player.IsInitialized) _undo.Redo(); });
+        _hotkeys.RegisterHandler(Hotkeys.HotkeyCatalog.RedoAlt, () => { if (_player.IsInitialized) _undo.Redo(); });
     }
 
     /// <summary>

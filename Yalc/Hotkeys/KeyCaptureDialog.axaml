@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="YetAnotherLosslessCutter.Hotkeys.KeyCaptureDialog"
+        Title="Press a key combination"
+        Width="380" Height="200"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource SemiColorBackground0}">
+  <Grid RowDefinitions="*,Auto" Margin="20,16,20,12">
+    <StackPanel Grid.Row="0" VerticalAlignment="Center" Spacing="10">
+      <TextBlock x:Name="ActionLabel" FontSize="13" FontWeight="SemiBold"
+                 Foreground="#f0f0f0" HorizontalAlignment="Center"
+                 Text="(action)" />
+      <Border Background="#222a35" CornerRadius="4" Padding="14,10"
+              HorizontalAlignment="Center">
+        <TextBlock x:Name="ChordLabel"
+                   FontFamily="Consolas,Menlo,Courier New" FontSize="16"
+                   Foreground="#f0f0f0"
+                   Text="(press a key)" />
+      </Border>
+      <TextBlock FontSize="11" Foreground="#cccccc" HorizontalAlignment="Center"
+                 TextWrapping="Wrap" TextAlignment="Center"
+                 Text="Press the key combination, then click Save. Esc cancels." />
+    </StackPanel>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="6">
+      <Button x:Name="UnbindButton" Content="Unbind" Padding="14,5" Click="Unbind_Click" />
+      <Button Content="Cancel" Padding="14,5" Click="Cancel_Click" />
+      <Button x:Name="SaveButton" Content="Save" Classes="Primary Solid"
+              Padding="14,5" IsEnabled="False" Click="Save_Click" />
+    </StackPanel>
+  </Grid>
+</Window>
