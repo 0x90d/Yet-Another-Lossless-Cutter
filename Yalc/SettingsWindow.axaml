@@ -38,11 +38,11 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="TextBlock.fieldHint">
-      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontSize" Value="12" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Margin" Value="10,0,0,0" />
       <Setter Property="TextWrapping" Value="Wrap" />
-      <Setter Property="Foreground" Value="{DynamicResource SemiColorTextSecondary}" />
+      <Setter Property="Foreground" Value="#cccccc" />
     </Style>
     <!-- TabItem styling: roomy headers on the left strip. -->
     <Style Selector="TabItem">
@@ -97,8 +97,8 @@
                            Margin="0,4,0,0" FontFamily="Consolas,Menlo,Courier New"
                            Foreground="{DynamicResource SemiColorTextSecondary}"
                            Text="" />
-                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="11"
-                           Foreground="{DynamicResource SemiColorTextSecondary}"
+                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="#cccccc"
                            Text="{}Tokens: {name} {ext} {start} {end} {duration} {date} {time} {datetime} {index}.  Case-insensitive. Unknown tokens are left in place." />
               </StackPanel>
             </Border>
@@ -113,8 +113,8 @@
             <Border Classes="card">
               <StackPanel Spacing="0">
                 <TextBlock Text="Silence detection" Classes="section" />
-                <TextBlock Margin="0,0,0,8" TextWrapping="Wrap" FontSize="11"
-                           Foreground="{DynamicResource SemiColorTextSecondary}"
+                <TextBlock Margin="0,0,0,8" TextWrapping="Wrap" FontSize="12"
+                           Foreground="#cccccc"
                            Text="Auto-cut tuning. Run from the &quot;↓ silence&quot; toolbar button." />
                 <Grid ColumnDefinitions="170,120,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,4">
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="Threshold (dB)" VerticalAlignment="Center" />
@@ -210,8 +210,8 @@
             <Border Classes="card">
               <StackPanel Spacing="0">
                 <TextBlock Text="Interface" Classes="section" />
-                <TextBlock Margin="0,0,0,6" TextWrapping="Wrap" FontSize="11"
-                           Foreground="{DynamicResource SemiColorTextSecondary}"
+                <TextBlock Margin="0,0,0,6" TextWrapping="Wrap" FontSize="12"
+                           Foreground="#cccccc"
                            Text="Hide buttons you don't use. Defaults are all on." />
                 <ToggleSwitch Content="Jump magnitude buttons (1m / 10s / 1s)"
                               IsChecked="{Binding ShowJumpButtons}" />
