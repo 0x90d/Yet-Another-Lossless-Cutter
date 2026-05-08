@@ -100,6 +100,11 @@
                 <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
                            Foreground="#cccccc"
                            Text="{}Tokens: {name} {ext} {start} {end} {duration} {date} {time} {datetime} {index}.  Case-insensitive. Unknown tokens are left in place." />
+
+                <ToggleSwitch Content="Frame capture: ask for save location"
+                              IsChecked="{Binding FrameCaptureAskForLocation}"
+                              Margin="0,12,0,0"
+                              ToolTip.Tip="When on (default), the P key / ⎙ button opens a Save dialog. When off, captures land at source-folder/{name}_{HH.MM.SS.fff}.png automatically." />
               </StackPanel>
             </Border>
           </StackPanel>

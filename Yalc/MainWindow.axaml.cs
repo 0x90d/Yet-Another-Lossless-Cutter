@@ -2461,6 +2461,23 @@ public partial class MainWindow : Window
 
     private void FrameCaptureButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); CaptureFrame(); }
 
+    /// <summary>
+    /// Click on the position or duration label opens a small dialog to type an
+    /// absolute timestamp. Avoids the "create a segment first to edit a time"
+    /// detour that the segment-list inline editor required.
+    /// </summary>
+    private async void PositionLabel_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!_player.IsInitialized || _duration <= 0) return;
+        var dlg = new Dialogs.SeekTimeDialog(TimeSpan.FromSeconds(Math.Max(0, _player.TimePos)));
+        await dlg.ShowDialog(this);
+        if (dlg.Result is { } target)
+        {
+            var clamped = Math.Clamp(target.TotalSeconds, 0, _duration);
+            _player.SeekAbsolute(clamped, exact: true);
+        }
+    }
+
     private void AdjustPlaybackSpeed(double factor)
     {
         if (!_player.IsInitialized) return;
@@ -2547,12 +2564,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Save the current video frame as PNG. Filename is the source stem plus the
-    /// playhead timestamp. Lands next to the source when SaveToSourceFolder is on,
-    /// otherwise in the configured output directory. No template — screenshots are
-    /// a different artifact than cuts and don't need the full token grammar.
+    /// Save the current video frame as PNG. When <see cref="Settings.FrameCaptureAskForLocation"/>
+    /// is on (default), opens a Save dialog so the user always sees where it lands.
+    /// Otherwise auto-saves to the source folder (or configured output dir).
+    /// Surfaces mpv's command return code so silent failures aren't swallowed.
     /// </summary>
-    private void CaptureFrame()
+    private async void CaptureFrame()
     {
         if (string.IsNullOrEmpty(_currentFile) || !_player.IsInitialized)
         {
@@ -2573,12 +2590,49 @@ public partial class MainWindow : Window
         var ts = TimeSpan.FromSeconds(Math.Max(0, _player.TimePos))
             .ToString(@"hh\.mm\.ss\.fff", CultureInfo.InvariantCulture);
         var fileName = OutputTemplate.SanitizeFileName($"{stem}_{ts}.png");
-        var path = Path.Combine(dir, fileName);
+        string path;
+
+        if (Settings.Instance.FrameCaptureAskForLocation)
+        {
+            var startFolder = await StorageProvider.TryGetFolderFromPathAsync(dir);
+            var picked = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save frame as PNG",
+                SuggestedFileName = fileName,
+                SuggestedStartLocation = startFolder,
+                DefaultExtension = "png",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("PNG image") { Patterns = new[] { "*.png" } },
+                    new FilePickerFileType("JPEG image") { Patterns = new[] { "*.jpg", "*.jpeg" } },
+                },
+            });
+            if (picked == null) { SetStatus("frame capture cancelled"); return; }
+            path = picked.TryGetLocalPath() ?? string.Empty;
+            if (string.IsNullOrEmpty(path))
+            {
+                SetStatus("frame capture: couldn't resolve a local path for the chosen file");
+                return;
+            }
+        }
+        else
+        {
+            path = Path.Combine(dir, fileName);
+        }
 
         try
         {
-            _player.ScreenshotToFile(path);
-            SetStatus($"frame captured → {fileName}");
+            var err = _player.ScreenshotToFile(path);
+            if (err < 0)
+            {
+                SetStatus($"frame capture: mpv rejected the path (error {err}). Tried: {path}");
+                return;
+            }
+            // mpv writes asynchronously — give it a moment, then verify.
+            await Task.Delay(400);
+            SetStatus(File.Exists(path)
+                ? $"frame captured → {path}"
+                : $"frame capture: mpv accepted but file is not yet on disk at {path}");
         }
         catch (Exception ex)
         {

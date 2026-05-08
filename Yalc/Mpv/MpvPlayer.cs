@@ -405,13 +405,15 @@ public sealed class MpvPlayer : IDisposable
     /// <summary>
     /// Save the current video frame to <paramref name="path"/> as PNG/JPG (mpv picks
     /// the codec from the extension). Uses the "video" mode so the output is the raw
-    /// decoded frame — no OSD or subtitle overlays. Async on mpv's side; the file
-    /// appears moments after this returns.
+    /// decoded frame — no OSD or subtitle overlays. Returns mpv's error code: 0 on
+    /// success, negative on failure (path unwritable, codec unavailable, etc).
+    /// Even success can't guarantee the file is on disk by the time this returns;
+    /// mpv writes asynchronously.
     /// </summary>
-    public void ScreenshotToFile(string path)
+    public int ScreenshotToFile(string path)
     {
         EnsureInit();
-        LibMpv.CommandArgs(_handle, "screenshot-to-file", path, "video");
+        return LibMpv.CommandArgs(_handle, "screenshot-to-file", path, "video");
     }
 
     /// <summary>

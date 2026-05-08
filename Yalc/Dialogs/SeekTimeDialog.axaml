@@ -1,0 +1,26 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="YetAnotherLosslessCutter.Dialogs.SeekTimeDialog"
+        Title="Seek to time"
+        Width="380" Height="170"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource SemiColorBackground0}">
+  <Grid RowDefinitions="*,Auto" Margin="20,16,20,12">
+    <StackPanel Grid.Row="0" VerticalAlignment="Center" Spacing="8">
+      <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="#f0f0f0"
+                 Text="Jump to time" />
+      <TextBox x:Name="TimeBox"
+               FontFamily="Consolas,Menlo,Courier New" FontSize="14"
+               Padding="8,6" />
+      <TextBlock FontSize="11" Foreground="#cccccc" TextWrapping="Wrap"
+                 Text="hh:mm:ss.fff — also accepts h:mm:ss, m:ss, etc. Enter to seek, Esc to cancel." />
+    </StackPanel>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="6">
+      <Button Content="Cancel" Padding="14,5" Click="Cancel_Click" />
+      <Button x:Name="OkButton" Content="Seek" Classes="Primary Solid"
+              Padding="14,5" IsDefault="True" Click="Ok_Click" />
+    </StackPanel>
+  </Grid>
+</Window>

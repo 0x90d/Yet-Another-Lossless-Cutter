@@ -458,7 +458,10 @@
           <TextBlock Grid.Column="0" x:Name="PositionLabel" VerticalAlignment="Center"
                      Margin="14,0" FontFamily="Consolas,Menlo,Courier New"
                      Foreground="{DynamicResource SemiColorTextPrimary}"
-                     Text="00:00:00.000" />
+                     Text="00:00:00.000"
+                     Cursor="Hand"
+                     PointerPressed="PositionLabel_PointerPressed"
+                     ToolTip.Tip="Click to seek to a specific time" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
                       Spacing="3" Margin="0,6" VerticalAlignment="Center">
             <Button x:Name="FrameBackButton" Content="◄"   Click="FrameBackButton_Click"
@@ -485,7 +488,10 @@
           <TextBlock Grid.Column="2" x:Name="DurationLabel" VerticalAlignment="Center"
                      Margin="14,0" FontFamily="Consolas,Menlo,Courier New"
                      Foreground="{DynamicResource SemiColorTextPrimary}"
-                     Text="00:00:00.000" />
+                     Text="00:00:00.000"
+                     Cursor="Hand"
+                     PointerPressed="PositionLabel_PointerPressed"
+                     ToolTip.Tip="Click to seek to a specific time" />
         </Grid>
 
         <!-- Action row: jump magnitudes + segment controls. Right-click on a jump

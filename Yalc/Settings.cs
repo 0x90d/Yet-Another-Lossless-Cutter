@@ -293,6 +293,15 @@ public sealed class Settings : ViewModelBase
     private bool _showFrameCaptureButton = true;
     public bool ShowFrameCaptureButton { get => _showFrameCaptureButton; set => Set(ref _showFrameCaptureButton, value); }
 
+    private bool _frameCaptureAskForLocation = true;
+    /// <summary>
+    /// When true, the frame-capture button / hotkey opens a Save dialog so the user
+    /// always knows where the PNG lands. When false, captures land at the auto-
+    /// computed path (source folder + stem + timestamp). Default true — explicit
+    /// over implicit so first-time users don't lose track of their files.
+    /// </summary>
+    public bool FrameCaptureAskForLocation { get => _frameCaptureAskForLocation; set => Set(ref _frameCaptureAskForLocation, value); }
+
     // ----- Hotkey customization -----
 
     private Dictionary<string, string> _hotkeyBindings = new();
