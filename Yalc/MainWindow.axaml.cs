@@ -41,6 +41,9 @@ public partial class MainWindow : Window
 
     // In-memory undo / redo for segment mutations. Cleared on file change.
     private readonly Undo.UndoStack _undo = new();
+
+    // Active silence-detection scan. Click-while-running cancels.
+    private CancellationTokenSource? _silenceCts;
     private string? _extractorLoadedPath;
     private CancellationTokenSource? _baseThumbCts;
     private CancellationTokenSource? _zoomThumbCts;
@@ -1436,6 +1439,7 @@ public partial class MainWindow : Window
     private void SetInButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); SetInPoint(); }
     private void SetOutButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); SetOutPoint(); }
     private void AddSegmentButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); AddSegment(); }
+    private async void DetectSilenceButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); await DetectSilenceAsync(); }
     private void CutButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); EnqueueAndStart(); }
 
     // Right-click on these buttons starts auto-seek +1m (matches DeleteFileButton).
@@ -2191,6 +2195,111 @@ public partial class MainWindow : Window
         var pos = _player.TimePos;
         var endSec = Timeline.Segments.Count == 0 ? _duration : Math.Min(pos + 5, _duration);
         AddSegmentInternal(pos, endSec);
+    }
+
+    /// <summary>
+    /// Run ffmpeg's silencedetect over the current file and turn the speech
+    /// ranges into segments. Click-while-running cancels. Existing segments are
+    /// cleared (with confirmation) so the result reads like one bulk replace —
+    /// pushed as a single composite undo entry so Ctrl+Z reverses everything.
+    /// </summary>
+    private async Task DetectSilenceAsync()
+    {
+        // Already running? Cancel it.
+        if (_silenceCts != null)
+        {
+            _silenceCts.Cancel();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_currentFile) || _duration <= 0)
+        {
+            SetStatus("no file loaded — cannot detect silence");
+            return;
+        }
+
+        if (Timeline.Segments.Count > 0 && Settings.Instance.ShowConfirmationPrompts)
+        {
+            var ok = await ConfirmDialog.ShowAsync(this, "Detect silence",
+                $"Replace the existing {Timeline.Segments.Count} segment(s) with auto-detected ones?\n\n" +
+                $"Threshold: {Settings.Instance.SilenceThresholdDb} dB · " +
+                $"min silence: {Settings.Instance.SilenceMinDurationSeconds}s.\n" +
+                "(Adjustable in Settings. Ctrl+Z to undo.)");
+            if (!ok) return;
+        }
+
+        var settings = Settings.Instance;
+        var detector = new Detectors.SilenceDetector();
+        var cts = new CancellationTokenSource();
+        _silenceCts = cts;
+        DetectSilenceButton.Content = "✕ cancel";
+        SetStatus("scanning for silence…");
+
+        try
+        {
+            var progress = new Progress<double>(pct =>
+                SetStatus($"scanning for silence… {pct:P0}"));
+
+            var silences = await detector.DetectAsync(
+                _currentFile,
+                settings.SilenceThresholdDb,
+                settings.SilenceMinDurationSeconds,
+                _duration,
+                progress,
+                cts.Token);
+
+            var speech = Detectors.SilenceParser.InvertToSpeech(
+                silences, _duration, minSpeechDurationSeconds: 0.0);
+
+            if (speech.Count == 0)
+            {
+                SetStatus($"silence scan: file matched as silent end-to-end ({silences.Count} interval(s)), no segments created");
+                return;
+            }
+
+            // Build the composite: clear any existing segments first, then add the
+            // detected ones. Single Ctrl+Z reverses the whole replace.
+            var actions = new List<Undo.IUndoAction>();
+            if (Timeline.Segments.Count > 0)
+            {
+                var snapshot = Timeline.Segments.ToArray();
+                foreach (var s in snapshot) s.MarkedForDeletion = true;
+                Timeline.Segments.Clear();
+                actions.Add(new Undo.ClearAllSegmentsAction(Timeline.Segments, snapshot));
+            }
+
+            foreach (var (from, to) in speech)
+            {
+                var seg = new VideoSegment
+                {
+                    SourceFile = _currentFile,
+                    MaxDuration = TimeSpan.FromSeconds(_duration),
+                    CutFrom = TimeSpan.FromSeconds(from),
+                    CutTo = TimeSpan.FromSeconds(to),
+                    ColorIndex = Timeline.Segments.Count,
+                };
+                Timeline.Segments.Add(seg);
+                actions.Add(new Undo.AddSegmentAction(
+                    Timeline.Segments, seg, Timeline.Segments.Count - 1));
+                _ = LoadThumbnailAsync(seg);
+            }
+
+            _undo.Push(new Undo.CompositeAction("detect silence", actions.ToArray()));
+            SetStatus($"silence scan: {silences.Count} silence(s) → {speech.Count} segment(s) (Ctrl+Z to undo)");
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus("silence detection cancelled");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"silence detection failed: {ex.Message}");
+        }
+        finally
+        {
+            _silenceCts = null;
+            DetectSilenceButton.Content = "↓ silence";
+        }
     }
 
     private void AddSegmentInternal(double startSec, double endSec)

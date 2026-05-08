@@ -120,3 +120,22 @@ public sealed class ClearAllSegmentsAction(
         list.Clear();
     }
 }
+
+/// <summary>
+/// Wraps multiple actions as a single undo step. Bulk operations (silence
+/// detection, scene-cut detection, batch ops) push one of these so Ctrl+Z reverses
+/// the whole batch in one keystroke instead of N+1 keystrokes. Children are undone
+/// in reverse order and redone in forward order.
+/// </summary>
+public sealed class CompositeAction(string description, params IUndoAction[] actions) : IUndoAction
+{
+    public string Description => description;
+    public void Undo()
+    {
+        for (var i = actions.Length - 1; i >= 0; i--) actions[i].Undo();
+    }
+    public void Redo()
+    {
+        for (var i = 0; i < actions.Length; i++) actions[i].Redo();
+    }
+}

@@ -206,6 +206,24 @@ public sealed class Settings : ViewModelBase
     /// </summary>
     public bool AlwaysMuteAudio { get => _alwaysMuteAudio; set => Set(ref _alwaysMuteAudio, value); }
 
+    // ----- Silence detection (auto-cut) -----
+
+    private double _silenceThresholdDb = -30.0;
+    /// <summary>
+    /// Threshold (dBFS, negative) below which audio counts as silent for the auto-cut
+    /// detector. -30 is a sensible default for stream/voice content; lower (e.g., -40)
+    /// is stricter (only true silence cuts), higher (e.g., -20) is looser (catches
+    /// quiet passages too).
+    /// </summary>
+    public double SilenceThresholdDb { get => _silenceThresholdDb; set => Set(ref _silenceThresholdDb, value); }
+
+    private double _silenceMinDurationSeconds = 0.5;
+    /// <summary>
+    /// Minimum continuous-silence length (seconds) to count as a cut point. Shorter gaps
+    /// (breaths, pauses between words) are ignored. Default 0.5s.
+    /// </summary>
+    public double SilenceMinDurationSeconds { get => _silenceMinDurationSeconds; set => Set(ref _silenceMinDurationSeconds, value); }
+
     // ----- File picker (Open from Folder) -----
 
     private string _filePickerFolderPath = string.Empty;

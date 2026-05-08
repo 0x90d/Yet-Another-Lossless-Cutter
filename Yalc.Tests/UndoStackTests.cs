@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using YetAnotherLosslessCutter;
 using YetAnotherLosslessCutter.Undo;
@@ -278,6 +279,56 @@ public class UndoStackTests
         Assert.Equal(2, list.Count);
         Assert.Same(a, list[0]);
         Assert.Same(b, list[1]);
+    }
+
+    // ---- CompositeAction ----
+
+    [Fact]
+    public void CompositeAction_UndoesInReverseOrder_RedoesInForwardOrder()
+    {
+        var order = new List<string>();
+        var a = new RecordingAction("A", order);
+        var b = new RecordingAction("B", order);
+        var c = new RecordingAction("C", order);
+        var composite = new CompositeAction("batch", a, b, c);
+
+        composite.Redo();
+        Assert.Equal(new[] { "redo:A", "redo:B", "redo:C" }, order);
+
+        order.Clear();
+        composite.Undo();
+        Assert.Equal(new[] { "undo:C", "undo:B", "undo:A" }, order);
+    }
+
+    [Fact]
+    public void CompositeAction_AsSingleStackEntry_OneCtrlZUndoesAll()
+    {
+        var list = new ObservableCollection<VideoSegment>();
+        var stack = new UndoStack();
+        var s1 = MakeSeg(0, 5);
+        var s2 = MakeSeg(10, 15);
+        list.Add(s1);
+        list.Add(s2);
+
+        // Push a composite that "added both segments" — undoing should remove both.
+        stack.Push(new CompositeAction("batch add",
+            new AddSegmentAction(list, s1, 0),
+            new AddSegmentAction(list, s2, 1)));
+
+        stack.Undo();
+        Assert.Empty(list);
+
+        stack.Redo();
+        Assert.Equal(2, list.Count);
+        Assert.Same(s1, list[0]);
+        Assert.Same(s2, list[1]);
+    }
+
+    private sealed class RecordingAction(string label, List<string> log) : IUndoAction
+    {
+        public string Description => label;
+        public void Undo() => log.Add($"undo:{label}");
+        public void Redo() => log.Add($"redo:{label}");
     }
 
     // ---- Integration: drive UndoStack with real actions ----

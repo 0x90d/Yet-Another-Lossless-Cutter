@@ -500,6 +500,9 @@
                     PointerPressed="AddSegmentButton_PointerPressed"
                     PointerWheelChanged="JumpButton_Wheel"
                     ToolTip.Tip="Add new segment at playhead (A) — wheel = ±1m, right-click = jump +1m" />
+            <Button x:Name="DetectSilenceButton" Content="↓ silence"
+                    Click="DetectSilenceButton_Click"
+                    ToolTip.Tip="Auto-detect silent gaps and create segments for the rest. Threshold and minimum-silence-length are in Settings. Click again while running to cancel." />
 
             <Border Classes="tx-sep" />
 
