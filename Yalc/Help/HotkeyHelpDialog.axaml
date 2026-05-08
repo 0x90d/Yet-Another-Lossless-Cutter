@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="YetAnotherLosslessCutter.Help.HotkeyHelpDialog"
+        Title="Keyboard shortcuts"
+        Width="540" Height="560"
+        MinWidth="420" MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True">
+  <Window.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,12,0,6" />
+    </Style>
+    <Style Selector="TextBlock.keyCol">
+      <Setter Property="FontFamily" Value="Consolas,Menlo,Courier New" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Padding" Value="0,3,12,3" />
+    </Style>
+    <Style Selector="TextBlock.descCol">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Padding" Value="0,3,0,3" />
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="*,Auto" Margin="16,12,16,12">
+    <ScrollViewer Grid.Row="0">
+      <StackPanel x:Name="Body" Spacing="0" />
+    </ScrollViewer>
+    <Button Grid.Row="1" Content="Close" Click="Close_Click"
+            HorizontalAlignment="Right" Padding="20,6" Margin="0,12,0,0" />
+  </Grid>
+</Window>

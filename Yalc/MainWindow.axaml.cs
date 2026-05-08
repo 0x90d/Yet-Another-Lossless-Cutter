@@ -2392,6 +2392,9 @@ public partial class MainWindow : Window
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Help is available even before mpv is initialized — user should be able to
+        // ask "what does this do" without first loading a file.
+        if (e.Key == Key.F1) { ShowHotkeyHelp(); e.Handled = true; return; }
         if (!_player.IsInitialized) return;
         // Any keypress stops auto-repeat — Esc is the natural cancel,
         // but the user is also already moving on if they're using shortcuts.
@@ -2423,6 +2426,13 @@ public partial class MainWindow : Window
     }
 
     private void LoopButton_Click(object? sender, RoutedEventArgs e) => ToggleLoopAtPlayhead();
+
+    /// <summary>Open the F1 hotkey help dialog as a child of this window.</summary>
+    private void ShowHotkeyHelp()
+    {
+        var dlg = new Help.HotkeyHelpDialog();
+        _ = dlg.ShowDialog(this);
+    }
 
     /// <summary>
     /// Toggle A-B loop. When off, finds the segment under the playhead and loops it.
