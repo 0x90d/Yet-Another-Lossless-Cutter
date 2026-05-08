@@ -2274,8 +2274,14 @@ public partial class MainWindow : Window
                 progress,
                 cts.Token);
 
+            // Effective min-speech: max of the absolute floor and a percent-of-file
+            // scaling. Lets one setting cover both 5-minute clips (where 0.5s matters)
+            // and 3-hour recordings (where 0.5s is noise) — see Settings.
+            var minSpeech = Math.Max(
+                settings.SilenceMinSpeechDurationSeconds,
+                settings.SilenceMinSpeechPercentOfDuration / 100.0 * _duration);
             var speech = Detectors.SilenceParser.InvertToSpeech(
-                silences, _duration, minSpeechDurationSeconds: 0.0);
+                silences, _duration, minSpeechDurationSeconds: minSpeech);
 
             if (speech.Count == 0)
             {

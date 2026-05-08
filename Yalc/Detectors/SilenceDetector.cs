@@ -43,11 +43,17 @@ public sealed class SilenceDetector
         var filter = $"silencedetect=n={thresholdDb.ToString("R", CultureInfo.InvariantCulture)}dB" +
                      $":d={minSilenceSeconds.ToString("R", CultureInfo.InvariantCulture)}";
 
+        // Downsample to mono 16kHz before the filter — silencedetect only cares
+        // about amplitude envelope, so giving it a fraction of the original sample
+        // count cuts decode + filter cost roughly proportionally. ~10x speedup on
+        // typical stereo-48kHz stream recordings.
         var args = new[]
         {
             "-hide_banner",
             "-i", videoPath,
             "-vn",                      // skip video — silencedetect operates on audio only
+            "-ac", "1",                 // downmix to mono
+            "-ar", "16000",             // resample to 16 kHz
             "-af", filter,
             "-f", "null", "-"
         };

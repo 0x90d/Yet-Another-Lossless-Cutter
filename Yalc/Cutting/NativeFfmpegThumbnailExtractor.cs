@@ -158,13 +158,15 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
     /// <summary>
     /// Returns the decoded frame at <paramref name="timeSec"/>, or <c>null</c> when
     /// no frame could be produced (typically: seeking past the last keyframe of a
-    /// .ts stream, or audio dropout regions). Genuine setup errors (extractor
-    /// disposed, not yet loaded) still throw — those are programmer bugs, not
-    /// expected runtime conditions.
+    /// .ts stream, or audio dropout regions). Returns <c>null</c> when the extractor
+    /// has been disposed too — fire-and-forget callers (e.g., per-segment thumbnail
+    /// loads after silence detection creates many segments) inherently race against
+    /// shutdown, and turning that into an exception just produces noise rather than
+    /// catching a real bug.
     /// </summary>
     public Task<Bitmap?> ExtractFrameAsync(double timeSec, CancellationToken ct = default) => Task.Run<Bitmap?>(() =>
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(NativeFfmpegThumbnailExtractor));
+        if (_disposed) return null;
         // OperationCanceledException is the expected unwind path when a newer view-pan
         // supersedes an in-flight extraction. We swallow it INSIDE the Task.Run lambda
         // so it doesn't surface as a "user-unhandled" exception in the debugger every

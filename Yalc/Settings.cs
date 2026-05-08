@@ -234,6 +234,25 @@ public sealed class Settings : ViewModelBase
     /// </summary>
     public double SilenceMinDurationSeconds { get => _silenceMinDurationSeconds; set => Set(ref _silenceMinDurationSeconds, value); }
 
+    private double _silenceMinSpeechDurationSeconds = 0.5;
+    /// <summary>
+    /// Absolute floor for kept-segment duration (seconds). Combined with the percent
+    /// knob below as <c>max(floor, percent × duration)</c>: the floor protects short
+    /// files from over-filtering, the percent scales for long files where a fixed
+    /// threshold would either flood the timeline (too low) or starve a 5-minute clip
+    /// (too high). Default 0.5s.
+    /// </summary>
+    public double SilenceMinSpeechDurationSeconds { get => _silenceMinSpeechDurationSeconds; set => Set(ref _silenceMinSpeechDurationSeconds, value); }
+
+    private double _silenceMinSpeechPercentOfDuration = 0.3;
+    /// <summary>
+    /// Min-speech percentage of total file duration. <c>0.3</c> means "at least 0.3%
+    /// of the file" — about 32s for a 3-hour recording, 0.9s for a 5-minute clip,
+    /// floored by <see cref="SilenceMinSpeechDurationSeconds"/> for very short files.
+    /// Set to 0 to disable the relative scaling (use only the absolute floor).
+    /// </summary>
+    public double SilenceMinSpeechPercentOfDuration { get => _silenceMinSpeechPercentOfDuration; set => Set(ref _silenceMinSpeechPercentOfDuration, value); }
+
     // ----- Interface (toolbar button visibility) -----
     //
     // Each toggle hides one button (or button group) on the main window. The Settings
