@@ -289,6 +289,9 @@ public sealed class Settings : ViewModelBase
     private bool _showDeleteFileButton = true;
     public bool ShowDeleteFileButton { get => _showDeleteFileButton; set => Set(ref _showDeleteFileButton, value); }
 
+    private bool _showFrameCaptureButton = true;
+    public bool ShowFrameCaptureButton { get => _showFrameCaptureButton; set => Set(ref _showFrameCaptureButton, value); }
+
     // ----- File picker (Open from Folder) -----
 
     private string _filePickerFolderPath = string.Empty;

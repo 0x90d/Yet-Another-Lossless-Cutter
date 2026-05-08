@@ -402,6 +402,18 @@ public sealed class MpvPlayer : IDisposable
             seconds.ToString("R", CultureInfo.InvariantCulture), "relative+keyframes");
     }
 
+    /// <summary>
+    /// Save the current video frame to <paramref name="path"/> as PNG/JPG (mpv picks
+    /// the codec from the extension). Uses the "video" mode so the output is the raw
+    /// decoded frame — no OSD or subtitle overlays. Async on mpv's side; the file
+    /// appears moments after this returns.
+    /// </summary>
+    public void ScreenshotToFile(string path)
+    {
+        EnsureInit();
+        LibMpv.CommandArgs(_handle, "screenshot-to-file", path, "video");
+    }
+
     public double Duration
     {
         get

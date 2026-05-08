@@ -227,6 +227,8 @@
                               IsChecked="{Binding ShowFrameStepButtons}" />
                 <ToggleSwitch Content="Loop button (⟳)"
                               IsChecked="{Binding ShowLoopButton}" />
+                <ToggleSwitch Content="Frame capture button (⎙)"
+                              IsChecked="{Binding ShowFrameCaptureButton}" />
                 <ToggleSwitch Content="Detect silence button"
                               IsChecked="{Binding ShowSilenceButton}" />
                 <ToggleSwitch Content="Next file button"

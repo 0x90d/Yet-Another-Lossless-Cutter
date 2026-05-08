@@ -456,6 +456,10 @@
                     Padding="10,6"
                     Click="LoopButton_Click"
                     ToolTip.Tip="Loop segment under playhead (L)" />
+            <Button x:Name="FrameCaptureButton" Content="⎙"
+                    Padding="10,6"
+                    Click="FrameCaptureButton_Click"
+                    ToolTip.Tip="Save current frame as PNG (P)" />
           </StackPanel>
           <TextBlock Grid.Column="2" x:Name="DurationLabel" VerticalAlignment="Center"
                      Margin="14,0" FontFamily="Consolas,Menlo,Courier New"

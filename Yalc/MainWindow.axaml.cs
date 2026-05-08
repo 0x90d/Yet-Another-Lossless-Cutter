@@ -409,6 +409,7 @@ public partial class MainWindow : Window
         if (FrameBackButton != null)       FrameBackButton.IsVisible       = s.ShowFrameStepButtons;
         if (FrameForwardButton != null)    FrameForwardButton.IsVisible    = s.ShowFrameStepButtons;
         if (LoopButton != null)            LoopButton.IsVisible            = s.ShowLoopButton;
+        if (FrameCaptureButton != null)    FrameCaptureButton.IsVisible    = s.ShowFrameCaptureButton;
         if (DetectSilenceButton != null)   DetectSilenceButton.IsVisible   = s.ShowSilenceButton;
         if (NextFileButton != null)        NextFileButton.IsVisible        = s.ShowNextFileButton;
         if (DeleteFileButton != null)      DeleteFileButton.IsVisible      = s.ShowDeleteFileButton;
@@ -2435,10 +2436,53 @@ public partial class MainWindow : Window
             case Key.A: AddSegment(); e.Handled = true; break;
             case Key.C: EnqueueAndStart(); e.Handled = true; break;
             case Key.L: ToggleLoopAtPlayhead(); e.Handled = true; break;
+            case Key.P: CaptureFrame(); e.Handled = true; break;
         }
     }
 
     private void LoopButton_Click(object? sender, RoutedEventArgs e) => ToggleLoopAtPlayhead();
+
+    private void FrameCaptureButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); CaptureFrame(); }
+
+    /// <summary>
+    /// Save the current video frame as PNG. Filename is the source stem plus the
+    /// playhead timestamp. Lands next to the source when SaveToSourceFolder is on,
+    /// otherwise in the configured output directory. No template — screenshots are
+    /// a different artifact than cuts and don't need the full token grammar.
+    /// </summary>
+    private void CaptureFrame()
+    {
+        if (string.IsNullOrEmpty(_currentFile) || !_player.IsInitialized)
+        {
+            SetStatus("frame capture: no file loaded");
+            return;
+        }
+
+        var dir = Settings.Instance.SaveToSourceFolder
+            ? Path.GetDirectoryName(_currentFile) ?? string.Empty
+            : Settings.Instance.OutputDirectory;
+        if (string.IsNullOrEmpty(dir))
+        {
+            SetStatus("frame capture: no output directory configured");
+            return;
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(_currentFile);
+        var ts = TimeSpan.FromSeconds(Math.Max(0, _player.TimePos))
+            .ToString(@"hh\.mm\.ss\.fff", CultureInfo.InvariantCulture);
+        var fileName = OutputTemplate.SanitizeFileName($"{stem}_{ts}.png");
+        var path = Path.Combine(dir, fileName);
+
+        try
+        {
+            _player.ScreenshotToFile(path);
+            SetStatus($"frame captured → {fileName}");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"frame capture failed: {ex.Message}");
+        }
+    }
 
     /// <summary>Open the F1 hotkey help dialog as a child of this window.</summary>
     private void ShowHotkeyHelp()
