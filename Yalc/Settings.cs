@@ -229,10 +229,21 @@ public sealed class Settings : ViewModelBase
 
     private double _silenceMinDurationSeconds = 0.5;
     /// <summary>
-    /// Minimum continuous-silence length (seconds) to count as a cut point. Shorter gaps
-    /// (breaths, pauses between words) are ignored. Default 0.5s.
+    /// Absolute floor for "what counts as a cut-point silence". Combined with the
+    /// percent knob below as <c>max(floor, percent × duration)</c> so a fixed
+    /// 0.5s threshold doesn't flood a 3-hour file with cuts on every breath, and
+    /// short clips still get sensible behavior. Default 0.5s.
     /// </summary>
     public double SilenceMinDurationSeconds { get => _silenceMinDurationSeconds; set => Set(ref _silenceMinDurationSeconds, value); }
+
+    private double _silenceMinDurationPercentOfDuration = 0.1;
+    /// <summary>
+    /// Min-silence percentage of total file duration. <c>0.1</c> means "at least
+    /// 0.1% of the file" — about 10.8s for a 3-hour recording, 0.3s for a 5-minute
+    /// clip (floored by <see cref="SilenceMinDurationSeconds"/>). Set to 0 to use
+    /// only the absolute floor.
+    /// </summary>
+    public double SilenceMinDurationPercentOfDuration { get => _silenceMinDurationPercentOfDuration; set => Set(ref _silenceMinDurationPercentOfDuration, value); }
 
     private double _silenceMinSpeechDurationSeconds = 0.5;
     /// <summary>

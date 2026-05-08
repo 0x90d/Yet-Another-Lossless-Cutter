@@ -116,7 +116,7 @@
                 <TextBlock Margin="0,0,0,8" TextWrapping="Wrap" FontSize="12"
                            Foreground="#cccccc"
                            Text="Auto-cut tuning. Run from the &quot;↓ silence&quot; toolbar button." />
-                <Grid ColumnDefinitions="170,120,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,4">
+                <Grid ColumnDefinitions="180,120,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,4">
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="Threshold (dB)" VerticalAlignment="Center" />
                   <NumericUpDown Grid.Row="0" Grid.Column="1"
                                  Value="{Binding SilenceThresholdDb}"
@@ -125,28 +125,36 @@
                   <TextBlock Grid.Row="0" Grid.Column="2" Classes="fieldHint"
                              Text="Lower = stricter (true silence only). Higher = catches quiet passages." />
 
-                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Min silence (s)" VerticalAlignment="Center" />
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Min silence floor (s)" VerticalAlignment="Center" />
                   <NumericUpDown Grid.Row="1" Grid.Column="1"
                                  Value="{Binding SilenceMinDurationSeconds}"
                                  Minimum="0.05" Maximum="60" Increment="0.1"
                                  FormatString="0.00" Margin="0,2" />
                   <TextBlock Grid.Row="1" Grid.Column="2" Classes="fieldHint"
-                             Text="Shorter silences than this don't count as cut points." />
+                             Text="Absolute minimum silence length to count as a cut point. Protects short files." />
 
-                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Min speech floor (s)" VerticalAlignment="Center" />
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Min silence (% of file)" VerticalAlignment="Center" />
                   <NumericUpDown Grid.Row="2" Grid.Column="1"
+                                 Value="{Binding SilenceMinDurationPercentOfDuration}"
+                                 Minimum="0" Maximum="10" Increment="0.05"
+                                 FormatString="0.00" Margin="0,2" />
+                  <TextBlock Grid.Row="2" Grid.Column="2" Classes="fieldHint"
+                             Text="Scales with duration: 0.1 ≈ 10.8s/3h, 0.3s/5min. Effective = max(floor, %)." />
+
+                  <TextBlock Grid.Row="3" Grid.Column="0" Text="Min speech floor (s)" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="3" Grid.Column="1"
                                  Value="{Binding SilenceMinSpeechDurationSeconds}"
                                  Minimum="0" Maximum="600" Increment="0.5"
                                  FormatString="0.0" Margin="0,2" />
-                  <TextBlock Grid.Row="2" Grid.Column="2" Classes="fieldHint"
+                  <TextBlock Grid.Row="3" Grid.Column="2" Classes="fieldHint"
                              Text="Absolute minimum kept-segment length. Protects short files." />
 
-                  <TextBlock Grid.Row="3" Grid.Column="0" Text="Min speech (% of file)" VerticalAlignment="Center" />
-                  <NumericUpDown Grid.Row="3" Grid.Column="1"
+                  <TextBlock Grid.Row="4" Grid.Column="0" Text="Min speech (% of file)" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="4" Grid.Column="1"
                                  Value="{Binding SilenceMinSpeechPercentOfDuration}"
                                  Minimum="0" Maximum="10" Increment="0.1"
                                  FormatString="0.0" Margin="0,2" />
-                  <TextBlock Grid.Row="3" Grid.Column="2" Classes="fieldHint"
+                  <TextBlock Grid.Row="4" Grid.Column="2" Classes="fieldHint"
                              Text="Scales with duration: 0.3 ≈ 32s/3h, 0.9s/5min. Effective = max(floor, %)." />
                 </Grid>
               </StackPanel>

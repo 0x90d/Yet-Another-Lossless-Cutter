@@ -33,10 +33,14 @@ public static class OutputTemplate
 
     /// <summary>
     /// Render <paramref name="template"/> against <paramref name="ctx"/>. Unknown
-    /// tokens are left in place (visible to the user as a hint that the token name
-    /// is wrong). An empty / null template falls back to <see cref="Default"/>.
+    /// tokens that aren't resolved by <paramref name="resolveCustom"/> are left in
+    /// place (visible to the user as a hint that the token name is wrong). An
+    /// empty / null template falls back to <see cref="Default"/>.
     /// </summary>
-    public static string Render(string? template, in Context ctx)
+    /// <param name="resolveCustom">Optional fallback for tokens the core doesn't
+    /// recognize. Called once per unknown token; non-null/non-empty return is used,
+    /// otherwise the token is left in place. Used by plugin-fed tokens.</param>
+    public static string Render(string? template, in Context ctx, Func<string, string?>? resolveCustom = null)
     {
         if (string.IsNullOrWhiteSpace(template)) template = Default;
 
@@ -61,17 +65,17 @@ public static class OutputTemplate
             }
 
             var token = template.Substring(i + 1, close - i - 1);
-            sb.Append(Resolve(token, ctx));
+            sb.Append(Resolve(token, ctx, resolveCustom));
             i = close + 1;
         }
 
         return sb.ToString();
     }
 
-    private static string Resolve(string token, in Context ctx)
+    private static string Resolve(string token, in Context ctx, Func<string, string?>? resolveCustom)
     {
         // Tokens are case-insensitive so {Name} and {name} both work.
-        return token.ToLowerInvariant() switch
+        var builtIn = token.ToLowerInvariant() switch
         {
             "name"     => ctx.Name,
             "ext"      => ctx.Ext,
@@ -82,8 +86,15 @@ public static class OutputTemplate
             "time"     => ctx.Now.ToString("HH-mm-ss", CultureInfo.InvariantCulture),
             "datetime" => ctx.Now.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture),
             "index"    => ctx.Index.ToString("000", CultureInfo.InvariantCulture),
-            _ => "{" + token + "}", // unknown — leave in place so the user notices
+            _ => null,
         };
+        if (builtIn != null) return builtIn;
+
+        // Defer to a plugin-supplied resolver before giving up.
+        var custom = resolveCustom?.Invoke(token);
+        if (!string.IsNullOrEmpty(custom)) return custom;
+
+        return "{" + token + "}"; // unknown — leave in place so the user notices
     }
 
     /// <summary>

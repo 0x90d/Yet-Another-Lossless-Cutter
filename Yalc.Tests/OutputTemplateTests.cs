@@ -120,6 +120,41 @@ public class OutputTemplateTests
         Assert.Equal("00.00.00.000", OutputTemplate.Render("{start}", ctx));
     }
 
+    // ---- Custom resolver (plugin-fed tokens) ----
+
+    [Fact]
+    public void CustomResolver_ProvidesUnknownToken()
+    {
+        var result = OutputTemplate.Render("{name}-{model}{ext}", Sample(),
+            t => t == "model" ? "alice" : null);
+        Assert.Equal("myfile-alice.mp4", result);
+    }
+
+    [Fact]
+    public void CustomResolver_DoesNotOverrideBuiltInTokens()
+    {
+        // Built-in tokens take priority — a plugin can't shadow {name}.
+        var result = OutputTemplate.Render("{name}", Sample(),
+            t => "should-not-appear");
+        Assert.Equal("myfile", result);
+    }
+
+    [Fact]
+    public void CustomResolver_NullReturn_LeavesTokenInPlace()
+    {
+        var result = OutputTemplate.Render("{nope}", Sample(), t => null);
+        Assert.Equal("{nope}", result);
+    }
+
+    [Fact]
+    public void CustomResolver_EmptyReturn_LeavesTokenInPlace()
+    {
+        // Empty == "I don't have a value, defer" so a plugin returning "" is treated
+        // the same as null. Avoids accidentally substituting whitespace.
+        var result = OutputTemplate.Render("{nope}", Sample(), t => "");
+        Assert.Equal("{nope}", result);
+    }
+
     // ---- SanitizeFileName ----
 
     [Fact]

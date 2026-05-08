@@ -2266,10 +2266,17 @@ public partial class MainWindow : Window
             var progress = new Progress<double>(pct =>
                 SetStatus($"scanning for silence… {pct:P0}"));
 
+            // Same max(floor, percent × duration) scaling for the silence threshold
+            // as we use for min-speech: a fixed 0.5s threshold floods 3-hour files
+            // with cuts on every breath but is right for 5-minute clips.
+            var minSilence = Math.Max(
+                settings.SilenceMinDurationSeconds,
+                settings.SilenceMinDurationPercentOfDuration / 100.0 * _duration);
+
             var silences = await detector.DetectAsync(
                 _currentFile,
                 settings.SilenceThresholdDb,
-                settings.SilenceMinDurationSeconds,
+                minSilence,
                 _duration,
                 progress,
                 cts.Token);

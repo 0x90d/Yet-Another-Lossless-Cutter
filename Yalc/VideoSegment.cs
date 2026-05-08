@@ -247,7 +247,33 @@ public sealed class VideoSegment : Segment
             EndTime: _cutTo,
             Now: DateTime.Now,
             Index: index);
-        var rendered = OutputTemplate.Render(settings.OutputFilenameTemplate, ctx);
+
+        // Build a resolver that consults each registered IOutputTokenPlugin in
+        // order. Plugins that don't recognize the token return null and we move
+        // on; the first non-empty answer wins.
+        var tokenPlugins = PluginHost.Get<IOutputTokenPlugin>();
+        Func<string, string?>? resolveCustom = null;
+        if (tokenPlugins.Count > 0)
+        {
+            var tokenCtx = new OutputTokenContext
+            {
+                SourceFile = _sourceFile,
+                SegmentStart = _cutFrom,
+                SegmentEnd = _cutTo,
+                SegmentIndex = index,
+            };
+            resolveCustom = token =>
+            {
+                foreach (var p in tokenPlugins)
+                {
+                    var v = p.ResolveToken(token, tokenCtx);
+                    if (!string.IsNullOrEmpty(v)) return v;
+                }
+                return null;
+            };
+        }
+
+        var rendered = OutputTemplate.Render(settings.OutputFilenameTemplate, ctx, resolveCustom);
         var fileName = OutputTemplate.SanitizeFileName(rendered);
 
         var outputDir = settings.SaveToSourceFolder
