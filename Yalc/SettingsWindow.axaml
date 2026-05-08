@@ -73,6 +73,19 @@
                       IsEnabled="{Binding !SaveToSourceFolder}"
                       ToolTip.Tip="Pick output folder" />
             </Grid>
+
+            <TextBlock Text="Filename template" Margin="0,12,0,2" FontWeight="SemiBold" />
+            <TextBox x:Name="OutputTemplateBox"
+                     Text="{Binding OutputFilenameTemplate}"
+                     TextChanged="OutputTemplateBox_TextChanged"
+                     PlaceholderText="{}{name}-{start}-{end}{ext}" />
+            <TextBlock x:Name="OutputTemplatePreview"
+                       Margin="0,4,0,0" FontFamily="Consolas,Menlo,Courier New"
+                       Foreground="{DynamicResource SemiColorTextSecondary}"
+                       Text="" />
+            <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="11"
+                       Foreground="{DynamicResource SemiColorTextSecondary}"
+                       Text="{}Tokens: {name} {ext} {start} {end} {duration} {date} {time} {datetime} {index}.  Case-insensitive. Unknown tokens are left in place." />
           </StackPanel>
         </Border>
 

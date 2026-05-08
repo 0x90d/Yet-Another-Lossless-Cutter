@@ -232,14 +232,23 @@ public sealed class VideoSegment : Segment
     /// side effect callers can't see). Caller is responsible for ensuring the directory
     /// exists before writing.
     /// </summary>
-    public string ComputeOutputFile(Settings settings)
+    /// <param name="settings">Source of the output template, output dir, etc.</param>
+    /// <param name="index">1-based segment index for the <c>{index}</c> token. Default 1
+    /// when the caller doesn't have a meaningful position.</param>
+    public string ComputeOutputFile(Settings settings, int index = 1)
     {
         if (string.IsNullOrEmpty(_sourceFile))
             throw new InvalidOperationException("SourceFile not set");
 
-        var ext = Path.GetExtension(_sourceFile);
-        var stem = Path.GetFileNameWithoutExtension(_sourceFile);
-        var suffix = $"-{_cutFrom:hh\\.mm\\.ss\\.fff}-{_cutTo:hh\\.mm\\.ss\\.fff}{ext}";
+        var ctx = new OutputTemplate.Context(
+            Name: Path.GetFileNameWithoutExtension(_sourceFile),
+            Ext: Path.GetExtension(_sourceFile),
+            StartTime: _cutFrom,
+            EndTime: _cutTo,
+            Now: DateTime.Now,
+            Index: index);
+        var rendered = OutputTemplate.Render(settings.OutputFilenameTemplate, ctx);
+        var fileName = OutputTemplate.SanitizeFileName(rendered);
 
         var outputDir = settings.SaveToSourceFolder
             ? Path.GetDirectoryName(_sourceFile) ?? string.Empty
@@ -252,7 +261,7 @@ public sealed class VideoSegment : Segment
         foreach (var plugin in PluginHost.Get<IOutputPathPlugin>())
             outputDir = plugin.TransformOutputDirectory(_sourceFile, outputDir, pathContext);
 
-        return Path.Combine(outputDir, $"{stem}{suffix}");
+        return Path.Combine(outputDir, fileName);
     }
 
     private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max)

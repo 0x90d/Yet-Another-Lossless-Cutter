@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -17,6 +18,31 @@ public partial class SettingsWindow : Window
         AppendPluginContributions();
         AppendPluginManager();
         AppendNativeDepsCard();
+        UpdateOutputTemplatePreview();
+    }
+
+    private void OutputTemplateBox_TextChanged(object? sender, TextChangedEventArgs e)
+        => UpdateOutputTemplatePreview();
+
+    /// <summary>
+    /// Render a sample filename using the current template so the user sees the
+    /// effect live as they edit. Sample data is fixed and synthetic — independent
+    /// of any currently-loaded file so the preview is meaningful even before the
+    /// user opens anything.
+    /// </summary>
+    private void UpdateOutputTemplatePreview()
+    {
+        if (OutputTemplatePreview == null || OutputTemplateBox == null) return;
+        var ctx = new OutputTemplate.Context(
+            Name: "myvideo",
+            Ext: ".mp4",
+            StartTime: new TimeSpan(0, 0, 1, 23, 456),
+            EndTime: new TimeSpan(0, 0, 2, 34, 789),
+            Now: DateTime.Now,
+            Index: 1);
+        var rendered = OutputTemplate.Render(OutputTemplateBox.Text, ctx);
+        var sanitized = OutputTemplate.SanitizeFileName(rendered);
+        OutputTemplatePreview.Text = "→ " + sanitized;
     }
 
     /// <summary>

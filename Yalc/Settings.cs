@@ -145,6 +145,16 @@ public sealed class Settings : ViewModelBase
     private string _outputDirectory = string.Empty;
     public string OutputDirectory { get => _outputDirectory; set => Set(ref _outputDirectory, value); }
 
+    private string _outputFilenameTemplate = OutputTemplate.Default;
+    /// <summary>
+    /// Template for the per-cut output filename. Tokens (case-insensitive):
+    /// <c>{name}</c> · <c>{ext}</c> · <c>{start}</c> · <c>{end}</c> · <c>{duration}</c>
+    /// · <c>{date}</c> · <c>{time}</c> · <c>{datetime}</c> · <c>{index}</c>.
+    /// Empty / null falls back to <see cref="OutputTemplate.Default"/>. The result is
+    /// sanitized for the host filesystem before joining with the output directory.
+    /// </summary>
+    public string OutputFilenameTemplate { get => _outputFilenameTemplate; set => Set(ref _outputFilenameTemplate, value); }
+
     // ----- Queue behavior -----
 
     private bool _autoStartQueue = true;
