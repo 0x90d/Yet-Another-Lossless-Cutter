@@ -666,8 +666,19 @@ public class TimelineControl : Control
         }
     }
 
+    /// <summary>
+    /// Height of the segment "header" band — the opaque grab strip drawn at the top
+    /// of each segment. Plain click-drag inside the header moves the segment; clicks
+    /// in the rest of the segment area scrub the playhead like empty strip clicks.
+    /// Clamped so the band stays grabbable on short strips and doesn't dominate on
+    /// tall ones.
+    /// </summary>
+    private static double GetSegmentHeaderHeight(double stripHeight) =>
+        Math.Clamp(stripHeight * 0.20, 14.0, 28.0);
+
     private void DrawSegments(DrawingContext ctx, Rect stripRect)
     {
+        var headerH = GetSegmentHeaderHeight(stripRect.Height);
         foreach (var seg in Segments)
         {
             // Cull segments fully outside view
@@ -675,13 +686,22 @@ public class TimelineControl : Control
             var x1 = TimeToX(seg.CutFromSeconds);
             var x2 = TimeToX(seg.CutToSeconds);
             if (x2 <= x1) continue;
-            var segRect = new Rect(x1, stripRect.Y, x2 - x1, stripRect.Height);
             var fillBrush = seg.FillBrush;
             var edgeBrush = seg.Brush;
-            ctx.FillRectangle(fillBrush, segRect);
-            ctx.DrawRectangle(null, GetBorderPen(edgeBrush), segRect);
 
-            // Handles only if their x lies within visible bounds
+            // Header band — opaque "tab" on top of the strip. This is the grab zone
+            // for moving the segment; clicks below this band fall through to scrub.
+            var headerRect = new Rect(x1, stripRect.Y, x2 - x1, headerH);
+            ctx.FillRectangle(edgeBrush, headerRect);
+
+            // Body tint — keeps the segment's extent visible across the thumbnail
+            // strip without blocking interaction below the header.
+            var bodyRect = new Rect(x1, stripRect.Y + headerH, x2 - x1, stripRect.Height - headerH);
+            if (bodyRect.Height > 0)
+                ctx.FillRectangle(fillBrush, bodyRect);
+
+            // Edge handles span the full strip height — easy to grab and act as
+            // visible "this is where the cut starts/ends" guide lines.
             if (x1 >= -HandleVisualWidth && x1 <= Bounds.Width + HandleVisualWidth)
                 ctx.FillRectangle(edgeBrush,
                     new Rect(x1 - HandleVisualWidth / 2, stripRect.Y, HandleVisualWidth, stripRect.Height));
@@ -689,12 +709,12 @@ public class TimelineControl : Control
                 ctx.FillRectangle(edgeBrush,
                     new Rect(x2 - HandleVisualWidth / 2, stripRect.Y, HandleVisualWidth, stripRect.Height));
 
-            // Selected-segment highlight: a 2px white inner stroke inset slightly so it
-            // sits inside the colored handle bars rather than fighting them.
-            if (seg == _selectedSegment && segRect.Width > 6 && segRect.Height > 6)
+            // Selected-segment highlight: 2px white inner stroke inside the header
+            // band so it doesn't fight the handle bars on either side.
+            if (seg == _selectedSegment && headerRect.Width > 6 && headerRect.Height > 6)
             {
-                var inset = new Rect(segRect.X + 3, segRect.Y + 2,
-                    segRect.Width - 6, segRect.Height - 4);
+                var inset = new Rect(headerRect.X + 3, headerRect.Y + 2,
+                    headerRect.Width - 6, headerRect.Height - 4);
                 ctx.DrawRectangle(null, SelectedSegmentPen, inset);
             }
         }
@@ -836,10 +856,10 @@ public class TimelineControl : Control
         // through to normal click-to-seek behavior.
         if (e.ClickCount >= 2 && py >= RulerHeight + MinimapHeight)
         {
-            var dblHit = HitTestSegments(x);
-            if (dblHit.mode == DragMode.SegmentBody && dblHit.seg != null)
+            var dblSeg = FindSegmentAt(x);
+            if (dblSeg != null)
             {
-                RaiseEvent(new TimelineSegmentEventArgs(PlaySegmentRequestedEvent, this, dblHit.seg));
+                RaiseEvent(new TimelineSegmentEventArgs(PlaySegmentRequestedEvent, this, dblSeg));
                 e.Handled = true;
                 return;
             }
@@ -877,8 +897,11 @@ public class TimelineControl : Control
         Position = t;
         RaiseTime(PositionDraggedEvent,t);
 
-        // Then determine drag mode based on what's under the cursor.
-        var hit = HitTestSegments(x);
+        // Then determine drag mode based on what's under the cursor. Segment-body
+        // moves register only when the click is inside the segment's header band
+        // (see HitTestSegments) — clicks below the header fall through to scrub so
+        // dragging to seek inside a cut works without a modifier.
+        var hit = HitTestSegments(x, py);
         if (hit.mode != DragMode.None)
         {
             _drag = hit.mode;
@@ -918,17 +941,39 @@ public class TimelineControl : Control
         return TimelineMath.SnapTime(t, ViewDuration, Bounds.Width, targets, HandleHitRadius);
     }
 
-    private (DragMode mode, VideoSegment? seg) HitTestSegments(double x)
+    private (DragMode mode, VideoSegment? seg) HitTestSegments(double x, double y)
     {
+        // SegmentBody only registers inside the header band; the rest of the segment
+        // area falls through to playhead scrub. Edge handles stay full-strip-height.
+        var stripTop = RulerHeight + MinimapHeight;
+        var stripHeight = Math.Max(0, Bounds.Height - stripTop);
+        var headerH = GetSegmentHeaderHeight(stripHeight);
+        var inHeader = y >= stripTop && y < stripTop + headerH;
         foreach (var seg in Segments)
         {
             var x1 = TimeToX(seg.CutFromSeconds);
             var x2 = TimeToX(seg.CutToSeconds);
             if (Math.Abs(x - x1) <= HandleHitRadius) return (DragMode.SegmentStart, seg);
             if (Math.Abs(x - x2) <= HandleHitRadius) return (DragMode.SegmentEnd, seg);
-            if (x > x1 && x < x2) return (DragMode.SegmentBody, seg);
+            if (inHeader && x > x1 && x < x2) return (DragMode.SegmentBody, seg);
         }
         return (DragMode.None, null);
+    }
+
+    /// <summary>
+    /// Find the segment whose visible x-range covers <paramref name="x"/>, ignoring
+    /// y. Used by the double-click-to-play path so the user can dbl-click anywhere
+    /// on the colored segment (header or body tint) and have it play.
+    /// </summary>
+    private VideoSegment? FindSegmentAt(double x)
+    {
+        foreach (var seg in Segments)
+        {
+            var x1 = TimeToX(seg.CutFromSeconds);
+            var x2 = TimeToX(seg.CutToSeconds);
+            if (x > x1 && x < x2) return seg;
+        }
+        return null;
     }
 
     private bool _isPanning;
@@ -976,7 +1021,9 @@ public class TimelineControl : Control
         if (_drag == DragMode.None)
         {
             // Cursor feedback: tell the user what each part of the strip will do.
-            var hit = HitTestSegments(x);
+            // Body cursor only shows over the segment header band — the rest of the
+            // strip (including segment body tint) scrubs.
+            var hit = HitTestSegments(x, e.GetPosition(this).Y);
             Cursor = hit.mode switch
             {
                 DragMode.SegmentStart or DragMode.SegmentEnd => HandleCursor,
