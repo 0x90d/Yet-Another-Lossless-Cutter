@@ -10,6 +10,12 @@ namespace YetAnotherLosslessCutter.Controls;
 /// on Windows + Linux (wid embedding) and <see cref="MpvOpenGlVideoView"/> on macOS
 /// (render API). XAML and consuming code only see this single control with a
 /// <see cref="Player"/> property.
+///
+/// macOS sticks with the OpenGL render-API path because mpv's macvk gpu-context
+/// always creates its own NSWindow and ignores <c>wid</c> — the embedded-Metal
+/// path advertised in the original PR (#7857) was never wired up in the shipped
+/// implementation (see <c>video/out/vulkan/context_mac.m</c>: it constructs its
+/// own MacCommon and passes <c>vo_mac.layer</c>, not the host's, into Vulkan).
 /// </summary>
 public class MpvVideoView : Decorator
 {

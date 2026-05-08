@@ -53,6 +53,20 @@ class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            // macOS: Avalonia 12 defaults to [Metal, OpenGl, Software]. The
+            // video surface (MpvOpenGlVideoView : OpenGlControlBase) only gets
+            // driven when the OpenGL backend is active — under Metal,
+            // OnOpenGlInit / OnOpenGlRender never fire, the mpv render context
+            // never comes up, and loadfile stays queued forever (player area
+            // is black, timeline shows "No media loaded"). Force OpenGl first.
+            .With(new AvaloniaNativePlatformOptions
+            {
+                RenderingMode = new[]
+                {
+                    AvaloniaNativeRenderingMode.OpenGl,
+                    AvaloniaNativeRenderingMode.Software,
+                },
+            })
 #if DEBUG
             .WithDeveloperTools()
 #endif
