@@ -38,6 +38,9 @@ public partial class MainWindow : Window
     // when the segment is removed, or by toggling Loop off.
     private VideoSegment? _loopSegment;
     private double _lastReportedPos;
+
+    // In-memory undo / redo for segment mutations. Cleared on file change.
+    private readonly Undo.UndoStack _undo = new();
     private string? _extractorLoadedPath;
     private CancellationTokenSource? _baseThumbCts;
     private CancellationTokenSource? _zoomThumbCts;
@@ -151,26 +154,15 @@ public partial class MainWindow : Window
             Timeline.Position = Math.Clamp(t, 0, _duration > 0 ? _duration : 0);
             PositionLabel.Text = FormatTime(t);
 
-            // A-B loop: only fire when playback crosses the loop segment's end via
-            // natural progression (small delta from last report). This avoids
-            // re-snapping the user back when they manually scrub past the end.
+            // A-B loop. The natural-progression check lives on VideoSegment so it can
+            // be unit-tested; the host's only job here is "did the segment go away?"
+            // and "do the seek if asked".
             if (_loopSegment is { } seg)
             {
                 if (!Timeline.Segments.Contains(seg))
-                {
                     SetLoopSegment(null);
-                }
-                else
-                {
-                    var delta = t - _lastReportedPos;
-                    var natural = delta > 0 && delta < 1.0;
-                    if (natural
-                        && _lastReportedPos >= seg.CutFromSeconds
-                        && t >= seg.CutToSeconds - 0.05)
-                    {
-                        _player.SeekAbsolute(seg.CutFromSeconds, exact: true);
-                    }
-                }
+                else if (seg.ShouldLoopBack(_lastReportedPos, t))
+                    _player.SeekAbsolute(seg.CutFromSeconds, exact: true);
             }
             _lastReportedPos = t;
         });
@@ -186,6 +178,7 @@ public partial class MainWindow : Window
             Timeline.ResetView();
             SetLoopSegment(null);
             _lastReportedPos = 0;
+            _undo.Clear();
             // Surface any chapter markers the file ships with. Most stream-recorder
             // .ts files have none; mainstream MKV/MP4s usually do.
             Timeline.Markers.Clear();
@@ -251,6 +244,14 @@ public partial class MainWindow : Window
             if (!_player.IsInitialized) return;
             _player.SeekAbsolute(e.Segment.CutFromSeconds, exact: true);
             _player.Play();
+        };
+
+        // Drag-end on segment (move / resize / edge) → push one undo entry per drag.
+        Timeline.SegmentEdited += (_, e) =>
+        {
+            _undo.Push(new Undo.ChangeSegmentTimesAction(
+                e.Segment, e.OldFromSeconds, e.OldToSeconds,
+                e.Segment.CutFromSeconds, e.Segment.CutToSeconds));
         };
 
         // Debounce zoom-layer regeneration: kick the timer whenever ViewStart/ViewEnd change.
@@ -1024,11 +1025,14 @@ public partial class MainWindow : Window
                 $"Remove all {Timeline.Segments.Count} segment(s) from the timeline?");
             if (!ok) return;
         }
+        // Snapshot before mutating so undo can restore the full list.
+        var snapshot = Timeline.Segments.ToArray();
         // Mark each as deleted so an in-flight queue runner won't pick them up if
         // they're shared references with the queue list. Then clear the timeline.
         foreach (var seg in Timeline.Segments)
             seg.MarkedForDeletion = true;
         Timeline.Segments.Clear();
+        _undo.Push(new Undo.ClearAllSegmentsAction(Timeline.Segments, snapshot));
     }
 
     // --- Cut button label ---
@@ -1065,6 +1069,7 @@ public partial class MainWindow : Window
         FileSizeLabel.Text = TryFormatFileSize(path);
         SetStatus("loading…");
         Timeline.Segments.Clear();
+        _undo.Clear();
         Timeline.Markers.Clear();
         Timeline.BaseFrames = null;
         Timeline.AudioPeaks = null;
@@ -1252,6 +1257,7 @@ public partial class MainWindow : Window
         FileSizeLabel.Text = string.Empty;
         if (PlaylistRemainingPill != null) PlaylistRemainingPill.IsVisible = false;
         Timeline.Segments.Clear();
+        _undo.Clear();
         Timeline.Markers.Clear();
         Timeline.BaseFrames = null;
         Timeline.AudioPeaks = null;
@@ -1489,8 +1495,11 @@ public partial class MainWindow : Window
         }
 
         // Clear timeline once segments are queued — they're tracked in the Queue panel
-        // now, and the user is moving on (typically to the next file).
+        // now, and the user is moving on (typically to the next file). Drop the undo
+        // stack too: the segments live in _queueSegments now, and undoing the clear
+        // would put them back in the timeline while leaving them in the queue.
         Timeline.Segments.Clear();
+        _undo.Clear();
 
         if (Settings.Instance.AutoStartQueue)
             StartQueueIfIdle();
@@ -1577,9 +1586,12 @@ public partial class MainWindow : Window
                 $"Remove this segment from the list?\n{seg.CutFrom:hh\\:mm\\:ss\\.fff} → {seg.CutTo:hh\\:mm\\:ss\\.fff}");
             if (!ok) return;
         }
+        var index = Timeline.Segments.IndexOf(seg);
         seg.MarkedForDeletion = true;
         Timeline.Segments.Remove(seg);
         _queueSegments.Remove(seg);
+        if (index >= 0)
+            _undo.Push(new Undo.RemoveSegmentAction(Timeline.Segments, seg, index));
     }
 
     // --- Context menu handlers (queue + segment list) ---
@@ -2146,7 +2158,12 @@ public partial class MainWindow : Window
             AddSegmentInternal(pos, _duration);
             return;
         }
+        var oldFrom = target.CutFromSeconds;
+        var oldTo = target.CutToSeconds;
         target.CutFromSeconds = Math.Min(pos, target.CutToSeconds - 0.04);
+        if (Math.Abs(target.CutFromSeconds - oldFrom) > 1e-6)
+            _undo.Push(new Undo.ChangeSegmentTimesAction(
+                target, oldFrom, oldTo, target.CutFromSeconds, target.CutToSeconds));
         _ = LoadThumbnailAsync(target);
     }
 
@@ -2160,7 +2177,12 @@ public partial class MainWindow : Window
             AddSegmentInternal(0, pos);
             return;
         }
+        var oldFrom = target.CutFromSeconds;
+        var oldTo = target.CutToSeconds;
         target.CutToSeconds = Math.Max(pos, target.CutFromSeconds + 0.04);
+        if (Math.Abs(target.CutToSeconds - oldTo) > 1e-6)
+            _undo.Push(new Undo.ChangeSegmentTimesAction(
+                target, oldFrom, oldTo, target.CutFromSeconds, target.CutToSeconds));
     }
 
     private void AddSegment()
@@ -2186,6 +2208,7 @@ public partial class MainWindow : Window
             ColorIndex = Timeline.Segments.Count,
         };
         Timeline.Segments.Add(seg);
+        _undo.Push(new Undo.AddSegmentAction(Timeline.Segments, seg, Timeline.Segments.Count - 1));
         _ = LoadThumbnailAsync(seg);
     }
 
@@ -2241,6 +2264,13 @@ public partial class MainWindow : Window
         switch (e.Key)
         {
             case Key.Space: _player.TogglePause(); e.Handled = true; break;
+            case Key.Z when (e.KeyModifiers & KeyModifiers.Control) != 0
+                         && (e.KeyModifiers & KeyModifiers.Shift) != 0:
+                _undo.Redo(); e.Handled = true; break;
+            case Key.Z when (e.KeyModifiers & KeyModifiers.Control) != 0:
+                _undo.Undo(); e.Handled = true; break;
+            case Key.Y when (e.KeyModifiers & KeyModifiers.Control) != 0:
+                _undo.Redo(); e.Handled = true; break;
             case Key.Left when (e.KeyModifiers & KeyModifiers.Alt) != 0:
                 _player.SeekKeyframeRelative(-1.0); e.Handled = true; break;
             case Key.Right when (e.KeyModifiers & KeyModifiers.Alt) != 0:

@@ -260,6 +260,21 @@ public class TimelineControl : Control
         remove => RemoveHandler(PlaySegmentRequestedEvent, value);
     }
 
+    public static readonly RoutedEvent<TimelineSegmentEditedEventArgs> SegmentEditedEvent =
+        RoutedEvent.Register<TimelineControl, TimelineSegmentEditedEventArgs>(
+            nameof(SegmentEdited), RoutingStrategies.Bubble);
+
+    /// <summary>
+    /// Raised once at the END of a segment drag (move / resize / edge), carrying the
+    /// segment's pre-drag bounds. Hosts use it to record a single undo entry per drag.
+    /// Not raised if the drag didn't actually change the bounds (e.g., click-without-drag).
+    /// </summary>
+    public event EventHandler<TimelineSegmentEditedEventArgs> SegmentEdited
+    {
+        add => AddHandler(SegmentEditedEvent, value);
+        remove => RemoveHandler(SegmentEditedEvent, value);
+    }
+
     private void RaiseTime(RoutedEvent<TimelineTimeEventArgs> ev, double time) =>
         RaiseEvent(new TimelineTimeEventArgs(ev, this, time));
 
@@ -267,6 +282,10 @@ public class TimelineControl : Control
     private DragMode _drag = DragMode.None;
     private VideoSegment? _dragSegment;
     private double _dragGrabOffset;
+    // Captured on drag-start so we can emit a single SegmentEdited event with the
+    // pre-drag bounds when the drag ends — host pushes one undo entry per drag.
+    private double _dragOldFrom;
+    private double _dragOldTo;
 
     private double _hoverTime = -1;
     private bool _isHovering;
@@ -907,6 +926,8 @@ public class TimelineControl : Control
             _drag = hit.mode;
             _dragSegment = hit.seg;
             _dragGrabOffset = hit.mode == DragMode.SegmentBody ? t - hit.seg!.CutFromSeconds : 0;
+            _dragOldFrom = hit.seg!.CutFromSeconds;
+            _dragOldTo = hit.seg.CutToSeconds;
             e.Pointer.Capture(this);
             return;
         }
@@ -1082,12 +1103,30 @@ public class TimelineControl : Control
         base.OnPointerReleased(e);
         if (_drag != DragMode.None || _isPanning || _isMinimapDragging)
         {
+            // Emit one SegmentEdited per drag (with pre-drag bounds) so the host can
+            // record a single undo entry. Skip when the user clicked but didn't move,
+            // and when the segment was deleted/replaced underneath us mid-drag.
+            var endedDrag = _drag == DragMode.SegmentBody
+                || _drag == DragMode.SegmentStart
+                || _drag == DragMode.SegmentEnd;
+            var seg = _dragSegment;
+            var oldFrom = _dragOldFrom;
+            var oldTo = _dragOldTo;
+
             _drag = DragMode.None;
             _dragSegment = null;
             _isPanning = false;
             _isMinimapDragging = false;
             Cursor = null;
             e.Pointer.Capture(null);
+
+            if (endedDrag && seg != null
+                && (Math.Abs(seg.CutFromSeconds - oldFrom) > 1e-6
+                    || Math.Abs(seg.CutToSeconds - oldTo) > 1e-6))
+            {
+                RaiseEvent(new TimelineSegmentEditedEventArgs(
+                    SegmentEditedEvent, this, seg, oldFrom, oldTo));
+            }
         }
     }
 

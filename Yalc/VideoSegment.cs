@@ -139,6 +139,54 @@ public sealed class VideoSegment : Segment
     public TimeSpan CutDuration => _cutTo - _cutFrom;
 
     /// <summary>
+    /// Decide whether playback has just naturally crossed this segment's end and the
+    /// host should seek back to its start (A-B loop). True only when the previous
+    /// reported position was inside the segment, the current position has reached or
+    /// passed the end within <paramref name="endTolerance"/>, and the delta between
+    /// reports is small enough to indicate continuous playback rather than a manual
+    /// scrub. Pure — does not seek; the host calls <c>SeekAbsolute</c> on a true return.
+    /// </summary>
+    public bool ShouldLoopBack(double lastPos, double currentPos,
+        double endTolerance = 0.05, double maxNaturalDelta = 1.0)
+    {
+        var delta = currentPos - lastPos;
+        if (delta <= 0 || delta >= maxNaturalDelta) return false;
+        if (lastPos < CutFromSeconds) return false;
+        return currentPos >= CutToSeconds - endTolerance;
+    }
+
+    /// <summary>
+    /// Atomically set both bounds, clamping each to the file extents but not to each
+    /// other. Used by undo/redo where the target state is already known-valid but
+    /// might require a transient cross-over (e.g., translating the segment past the
+    /// current range, where setting the bounds individually would clamp).
+    /// </summary>
+    public void SetCutTimes(TimeSpan from, TimeSpan to)
+    {
+        if (from < TimeSpan.Zero) from = TimeSpan.Zero;
+        if (_maxDuration > TimeSpan.Zero && to > _maxDuration) to = _maxDuration;
+        if (from > to) (from, to) = (to, from);
+
+        var fromChanged = _cutFrom != from;
+        var toChanged = _cutTo != to;
+        if (!fromChanged && !toChanged) return;
+
+        _cutFrom = from;
+        _cutTo = to;
+        if (fromChanged)
+        {
+            OnPropertyChanged(nameof(CutFrom));
+            OnPropertyChanged(nameof(CutFromSeconds));
+        }
+        if (toChanged)
+        {
+            OnPropertyChanged(nameof(CutTo));
+            OnPropertyChanged(nameof(CutToSeconds));
+        }
+        OnPropertyChanged(nameof(CutDuration));
+    }
+
+    /// <summary>
     /// Slide the segment along the timeline keeping its duration fixed. Atomic: avoids
     /// the clamp dance when calling CutFrom/CutTo setters individually (each setter
     /// clamps against the *current* other bound, which can pin the value during a drag).
