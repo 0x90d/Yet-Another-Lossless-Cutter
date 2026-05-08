@@ -276,11 +276,56 @@
             <TextBlock FontSize="13" FontWeight="SemiBold"
                        Foreground="#f0f0f0"
                        Text="Processing Queue" />
-            <Button Grid.Column="1" x:Name="StartQueueButton"
-                    Classes="Primary Solid" Content="▶ Start"
-                    Padding="8,2" FontSize="11" MinHeight="0"
-                    Click="StartQueueButton_Click"
-                    ToolTip.Tip="Manually start processing the queue" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+              <Button x:Name="ClearQueueButton"
+                      Content="Clear all"
+                      Padding="8,2" FontSize="11" MinHeight="0"
+                      Click="ClearQueueButton_Click"
+                      ToolTip.Tip="Remove all items from the queue (timeline segments stay)" />
+              <Button x:Name="StartQueueButton"
+                      Classes="Primary Solid" Content="▶ Start"
+                      Padding="8,2" FontSize="11" MinHeight="0"
+                      Click="StartQueueButton_Click"
+                      ToolTip.Tip="Manually start processing the queue" />
+              <Button x:Name="PauseQueueButton" Content="⏸&#xFE0E;"
+                      Background="#d4a017" Foreground="Black"
+                      FontFamily="Segoe UI Symbol,Arial"
+                      Padding="6,2" FontSize="11" MinHeight="0"
+                      IsVisible="False"
+                      Click="PauseQueueButton_Click"
+                      ToolTip.Tip="Pause / resume the queue (current cut keeps running)">
+                <Button.Styles>
+                  <Style Selector="Button">
+                    <Setter Property="Foreground" Value="Black" />
+                  </Style>
+                  <Style Selector="Button:pointerover /template/ ContentPresenter">
+                    <Setter Property="Foreground" Value="Black" />
+                  </Style>
+                  <Style Selector="Button:pressed /template/ ContentPresenter">
+                    <Setter Property="Foreground" Value="Black" />
+                  </Style>
+                </Button.Styles>
+              </Button>
+              <Button x:Name="StopQueueButton" Content="⏹&#xFE0E;"
+                      Background="#c0392b" Foreground="Black"
+                      FontFamily="Segoe UI Symbol,Arial"
+                      Padding="6,2" FontSize="11" MinHeight="0"
+                      IsVisible="False"
+                      Click="StopQueueButton_Click"
+                      ToolTip.Tip="Stop the queue (cancels current cut)">
+                <Button.Styles>
+                  <Style Selector="Button">
+                    <Setter Property="Foreground" Value="Black" />
+                  </Style>
+                  <Style Selector="Button:pointerover /template/ ContentPresenter">
+                    <Setter Property="Foreground" Value="Black" />
+                  </Style>
+                  <Style Selector="Button:pressed /template/ ContentPresenter">
+                    <Setter Property="Foreground" Value="Black" />
+                  </Style>
+                </Button.Styles>
+              </Button>
+            </StackPanel>
           </Grid>
           <Grid Grid.Row="1">
             <ListBox x:Name="QueueList" Classes="fill"

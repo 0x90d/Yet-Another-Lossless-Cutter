@@ -72,6 +72,10 @@ public partial class MainWindow : Window
         {
             _queueSaveDebounce!.Stop();
             try { QueuePersistence.Save(_queueSegments); } catch { }
+            // Sync the on-disk thumbnail cache with the live queue so finished/removed
+            // items don't leave PNGs behind. Cheap directory-scan + file delete — runs
+            // at most every 500ms thanks to the debounce.
+            try { ThumbnailCache.Prune(_queueSegments); } catch { }
         };
 
         _queueSegments.CollectionChanged += (_, args) =>
@@ -91,8 +95,14 @@ public partial class MainWindow : Window
         // Restore the persisted queue from a previous session (if any). Items come back
         // as Waiting (or Failed); we never auto-start the runner — the user kicks it off
         // explicitly via the Start button or by cutting a new segment.
+        // Also rehydrate cached thumbnails so restored queue items don't show blank
+        // until the user reopens each source file.
         foreach (var seg in QueuePersistence.Load())
+        {
+            var cached = ThumbnailCache.TryLoad(seg);
+            if (cached != null) seg.Thumbnail = cached;
             _queueSegments.Add(seg);
+        }
 
         // Cut-button label tracks AutoStartQueue so the user can see at a glance
         // whether pressing it will start cutting immediately or just queue.
@@ -1472,6 +1482,38 @@ public partial class MainWindow : Window
         StartQueueIfIdle();
     }
 
+    private void PauseQueueButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_runnerTask is not { IsCompleted: false }) return;
+        _queuePaused = !_queuePaused;
+        SetStatus(_queuePaused
+            ? "queue paused — current cut will finish, no new ones start"
+            : "queue resumed");
+        UpdateQueueControls();
+    }
+
+    private void StopQueueButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_runnerTask is not { IsCompleted: false }) return;
+        _queuePaused = false;
+        _runnerCts?.Cancel();
+        SetStatus("stopping queue…");
+    }
+
+    private async void ClearQueueButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_runnerTask is { IsCompleted: false }) return;
+        if (_queueSegments.Count == 0) return;
+        if (Settings.Instance.ShowConfirmationPrompts)
+        {
+            var ok = await ConfirmDialog.ShowAsync(this, "Clear queue",
+                $"Remove all {_queueSegments.Count} item(s) from the queue?\n(Timeline segments stay.)");
+            if (!ok) return;
+        }
+        _queueSegments.Clear();
+        SetStatus("queue cleared");
+    }
+
     private void SettingsButton_Click(object? sender, RoutedEventArgs e)
     {
         // Modal so the user can't trigger cuts mid-edit. Settings auto-save on change,
@@ -1724,14 +1766,30 @@ public partial class MainWindow : Window
 
     private CancellationTokenSource? _runnerCts;
     private Task? _runnerTask;
+    private volatile bool _queuePaused;
 
     private void StartQueueIfIdle()
     {
         if (_runnerTask is { IsCompleted: false }) return;
         _runnerCts?.Dispose();
         _runnerCts = new CancellationTokenSource();
+        _queuePaused = false;
         var ct = _runnerCts.Token;
         _runnerTask = Task.Run(() => RunQueueAsync(ct));
+        UpdateQueueControls();
+        // Swap the buttons back to "Start" once the runner exits (success, cancel, or crash).
+        _ = _runnerTask.ContinueWith(_ => Dispatcher.UIThread.Post(UpdateQueueControls));
+    }
+
+    private void UpdateQueueControls()
+    {
+        var running = _runnerTask is { IsCompleted: false };
+        StartQueueButton.IsVisible = !running;
+        PauseQueueButton.IsVisible = running;
+        StopQueueButton.IsVisible = running;
+        ClearQueueButton.IsEnabled = !running;
+        // U+FE0E forces text-presentation so Segoe UI Emoji doesn't paint these blue.
+        PauseQueueButton.Content = _queuePaused ? "▶︎" : "⏸︎";
     }
 
     private async Task RunQueueAsync(CancellationToken ct)
@@ -1748,6 +1806,16 @@ public partial class MainWindow : Window
 
         while (!ct.IsCancellationRequested)
         {
+            // Pause gate: if the user hit Pause, idle here until they resume or stop.
+            // The currently-running cut (if any) finished before we got back to this
+            // line, so we never abort an in-flight ffmpeg on pause — only on Stop.
+            while (_queuePaused && !ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(200, ct); }
+                catch (OperationCanceledException) { break; }
+            }
+            if (ct.IsCancellationRequested) break;
+
             // Pick next Waiting segment on the UI thread (safe collection access).
             VideoSegment? next = null;
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -2104,7 +2172,13 @@ public partial class MainWindow : Window
             var bmp = await _extractor.ExtractFrameAsync(seg.CutFromSeconds);
             // bmp == null is the "couldn't decode at this timestamp" path —
             // leave the existing thumbnail alone rather than nuking it.
-            if (bmp != null) seg.Thumbnail = bmp;
+            if (bmp != null)
+            {
+                seg.Thumbnail = bmp;
+                // Persist so the queue can still show it after the app is restarted
+                // — the source file may not be the currently-loaded one next session.
+                ThumbnailCache.Save(seg, bmp);
+            }
         }
         catch (Exception)
         {
