@@ -74,6 +74,14 @@ public partial class MainWindow : Window
         UpdateQueueRemaining();
         UpdateActiveSettingsBadges();
         RefreshRecentFilesFlyout();
+        ApplyUiVisibility();
+        Settings.Instance.PropertyChanged += (_, e) =>
+        {
+            // Only repaint visibility when one of the Show* toggles changed; cheaper
+            // and avoids flicker when other unrelated settings update.
+            if (e.PropertyName is null || e.PropertyName.StartsWith("Show", StringComparison.Ordinal))
+                Dispatcher.UIThread.Post(ApplyUiVisibility);
+        };
 
         // Auto-save the queue on every mutation (add/remove/status change) instead
         // of only on graceful shutdown. A force-kill (debugger Stop, OS task-kill,
@@ -386,6 +394,24 @@ public partial class MainWindow : Window
             QueueEmptyState.IsVisible = _queueSegments.Count == 0;
         if (SegmentsEmptyState != null)
             SegmentsEmptyState.IsVisible = Timeline.Segments.Count == 0;
+    }
+
+    /// <summary>
+    /// Apply the per-button visibility settings (Settings → Interface). Called once
+    /// at startup and again whenever a Show* toggle changes. Each control may not be
+    /// realized yet (early in the constructor) so null-checks are required.
+    /// </summary>
+    private void ApplyUiVisibility()
+    {
+        var s = Settings.Instance;
+        if (JumpButtonsGroup != null)      JumpButtonsGroup.IsVisible      = s.ShowJumpButtons;
+        if (JumpButtonsSeparator != null)  JumpButtonsSeparator.IsVisible  = s.ShowJumpButtons;
+        if (FrameBackButton != null)       FrameBackButton.IsVisible       = s.ShowFrameStepButtons;
+        if (FrameForwardButton != null)    FrameForwardButton.IsVisible    = s.ShowFrameStepButtons;
+        if (LoopButton != null)            LoopButton.IsVisible            = s.ShowLoopButton;
+        if (DetectSilenceButton != null)   DetectSilenceButton.IsVisible   = s.ShowSilenceButton;
+        if (NextFileButton != null)        NextFileButton.IsVisible        = s.ShowNextFileButton;
+        if (DeleteFileButton != null)      DeleteFileButton.IsVisible      = s.ShowDeleteFileButton;
     }
 
     // --- Active settings badges ---

@@ -427,7 +427,7 @@
                      Text="00:00:00.000" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
                       Spacing="3" Margin="0,6" VerticalAlignment="Center">
-            <Button Content="◄"   Click="FrameBackButton_Click"
+            <Button x:Name="FrameBackButton" Content="◄"   Click="FrameBackButton_Click"
                     Padding="10,6"
                     ToolTip.Tip="Step 1 frame back ( , )" />
             <!-- Play is the visual anchor of this row — slightly larger and
@@ -436,7 +436,7 @@
                     Content="▶ Play" Click="PlayPauseButton_Click"
                     MinWidth="92" Padding="14,8" FontSize="13" FontWeight="SemiBold"
                     ToolTip.Tip="Play / pause (Space)" />
-            <Button Content="►"   Click="FrameForwardButton_Click"
+            <Button x:Name="FrameForwardButton" Content="►"   Click="FrameForwardButton_Click"
                     Padding="10,6"
                     ToolTip.Tip="Step 1 frame fwd ( . )" />
             <ToggleButton x:Name="LoopButton" Content="⟳"
@@ -466,26 +466,28 @@
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
                       Spacing="3" Margin="0,4,0,8">
             <!-- ─── Jump magnitudes ──────────────────────────────────── -->
-            <Button Content="«1m"  Tag="60"  Click="Back60Button_Click"  PointerPressed="Back60Button_PointerPressed"
-                    PointerWheelChanged="JumpButton_Wheel"
-                    ToolTip.Tip="Jump 1 minute back (wheel = ±1m, right-click for auto-repeat)" />
-            <Button Content="«10s" Tag="10"  Click="Back10Button_Click" PointerPressed="Back10Button_PointerPressed"
-                    PointerWheelChanged="JumpButton_Wheel"
-                    ToolTip.Tip="Jump 10s back (wheel = ±10s, right-click for auto-repeat)" />
-            <Button Content="«1s"  Tag="1"   Click="Back1Button_Click"  PointerPressed="Back1Button_PointerPressed"
-                    PointerWheelChanged="JumpButton_Wheel"
-                    ToolTip.Tip="Jump 1s back (wheel = ±1s, right-click for auto-repeat)" />
-            <Button Content="1s»"  Tag="1"   Click="Forward1Button_Click"  PointerPressed="Forward1Button_PointerPressed"
-                    PointerWheelChanged="JumpButton_Wheel"
-                    ToolTip.Tip="Jump 1s fwd (wheel = ±1s, right-click for auto-repeat)" />
-            <Button Content="10s»" Tag="10"  Click="Forward10Button_Click" PointerPressed="Forward10Button_PointerPressed"
-                    PointerWheelChanged="JumpButton_Wheel"
-                    ToolTip.Tip="Jump 10s fwd (wheel = ±10s, right-click for auto-repeat)" />
-            <Button Content="1m»"  Tag="60"  Click="Forward60Button_Click" PointerPressed="Forward60Button_PointerPressed"
-                    PointerWheelChanged="JumpButton_Wheel"
-                    ToolTip.Tip="Jump 1 minute fwd (wheel = ±1m, right-click for auto-repeat)" />
+            <StackPanel x:Name="JumpButtonsGroup" Orientation="Horizontal" Spacing="3">
+              <Button Content="«1m"  Tag="60"  Click="Back60Button_Click"  PointerPressed="Back60Button_PointerPressed"
+                      PointerWheelChanged="JumpButton_Wheel"
+                      ToolTip.Tip="Jump 1 minute back (wheel = ±1m, right-click for auto-repeat)" />
+              <Button Content="«10s" Tag="10"  Click="Back10Button_Click" PointerPressed="Back10Button_PointerPressed"
+                      PointerWheelChanged="JumpButton_Wheel"
+                      ToolTip.Tip="Jump 10s back (wheel = ±10s, right-click for auto-repeat)" />
+              <Button Content="«1s"  Tag="1"   Click="Back1Button_Click"  PointerPressed="Back1Button_PointerPressed"
+                      PointerWheelChanged="JumpButton_Wheel"
+                      ToolTip.Tip="Jump 1s back (wheel = ±1s, right-click for auto-repeat)" />
+              <Button Content="1s»"  Tag="1"   Click="Forward1Button_Click"  PointerPressed="Forward1Button_PointerPressed"
+                      PointerWheelChanged="JumpButton_Wheel"
+                      ToolTip.Tip="Jump 1s fwd (wheel = ±1s, right-click for auto-repeat)" />
+              <Button Content="10s»" Tag="10"  Click="Forward10Button_Click" PointerPressed="Forward10Button_PointerPressed"
+                      PointerWheelChanged="JumpButton_Wheel"
+                      ToolTip.Tip="Jump 10s fwd (wheel = ±10s, right-click for auto-repeat)" />
+              <Button Content="1m»"  Tag="60"  Click="Forward60Button_Click" PointerPressed="Forward60Button_PointerPressed"
+                      PointerWheelChanged="JumpButton_Wheel"
+                      ToolTip.Tip="Jump 1 minute fwd (wheel = ±1m, right-click for auto-repeat)" />
+            </StackPanel>
 
-            <Border Classes="tx-sep" />
+            <Border x:Name="JumpButtonsSeparator" Classes="tx-sep" />
 
             <!-- ─── Segment edit ─────────────────────────────────────── -->
             <Button Content="[ in (S)"  Tag="60" Click="SetInButton_Click"

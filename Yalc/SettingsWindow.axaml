@@ -89,6 +89,28 @@
           </StackPanel>
         </Border>
 
+        <!-- Interface (toolbar button visibility) -->
+        <Border Classes="card">
+          <StackPanel Spacing="0">
+            <TextBlock Text="Interface" Classes="section" />
+            <TextBlock Margin="0,0,0,6" TextWrapping="Wrap" FontSize="11"
+                       Foreground="{DynamicResource SemiColorTextSecondary}"
+                       Text="Hide buttons you don't use. Defaults are all on." />
+            <ToggleSwitch Content="Jump magnitude buttons (1m / 10s / 1s)"
+                          IsChecked="{Binding ShowJumpButtons}" />
+            <ToggleSwitch Content="Frame-step buttons (◄ ►)"
+                          IsChecked="{Binding ShowFrameStepButtons}" />
+            <ToggleSwitch Content="Loop button (⟳)"
+                          IsChecked="{Binding ShowLoopButton}" />
+            <ToggleSwitch Content="Detect silence button"
+                          IsChecked="{Binding ShowSilenceButton}" />
+            <ToggleSwitch Content="Next file button"
+                          IsChecked="{Binding ShowNextFileButton}" />
+            <ToggleSwitch Content="Delete file button"
+                          IsChecked="{Binding ShowDeleteFileButton}" />
+          </StackPanel>
+        </Border>
+
         <!-- Queue -->
         <Border Classes="card">
           <StackPanel Spacing="0">

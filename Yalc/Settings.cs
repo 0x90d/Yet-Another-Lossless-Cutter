@@ -234,6 +234,31 @@ public sealed class Settings : ViewModelBase
     /// </summary>
     public double SilenceMinDurationSeconds { get => _silenceMinDurationSeconds; set => Set(ref _silenceMinDurationSeconds, value); }
 
+    // ----- Interface (toolbar button visibility) -----
+    //
+    // Each toggle hides one button (or button group) on the main window. The Settings
+    // page surfaces these so users can de-clutter the action row without right-clicks
+    // (which conflict with the timeline's right-click-to-seek gesture). Defaults: all
+    // visible — power users opt out, new users see everything.
+
+    private bool _showJumpButtons = true;
+    public bool ShowJumpButtons { get => _showJumpButtons; set => Set(ref _showJumpButtons, value); }
+
+    private bool _showFrameStepButtons = true;
+    public bool ShowFrameStepButtons { get => _showFrameStepButtons; set => Set(ref _showFrameStepButtons, value); }
+
+    private bool _showLoopButton = true;
+    public bool ShowLoopButton { get => _showLoopButton; set => Set(ref _showLoopButton, value); }
+
+    private bool _showSilenceButton = true;
+    public bool ShowSilenceButton { get => _showSilenceButton; set => Set(ref _showSilenceButton, value); }
+
+    private bool _showNextFileButton = true;
+    public bool ShowNextFileButton { get => _showNextFileButton; set => Set(ref _showNextFileButton, value); }
+
+    private bool _showDeleteFileButton = true;
+    public bool ShowDeleteFileButton { get => _showDeleteFileButton; set => Set(ref _showDeleteFileButton, value); }
+
     // ----- File picker (Open from Folder) -----
 
     private string _filePickerFolderPath = string.Empty;
