@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:c="using:YetAnotherLosslessCutter.Controls"
+        xmlns:conv="using:YetAnotherLosslessCutter.Converters"
         xmlns:local="using:YetAnotherLosslessCutter"
         xmlns:dd="using:Avalonia.Input"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="780"
@@ -16,6 +17,7 @@
         dd:DragDrop.AllowDrop="True">
 
   <Window.Resources>
+    <conv:TimeSpanFffConverter x:Key="TimeSpanFff" />
     <!-- Queue item: smaller thumbnail (more rows fit), filename on top, time range
          compact, full-width progress bar at the bottom. Status is shown ABOVE
          the bar (not overlapping it) and tracks Waiting / Running / Finished / Failed. -->
@@ -83,20 +85,24 @@
           <Grid ColumnDefinitions="40,*">
             <TextBlock Grid.Column="0" Text="Start"
                        FontFamily="Consolas,Menlo,Courier New" FontSize="11"
-                       Foreground="#aaaaaa" />
-            <TextBlock Grid.Column="1"
-                       Text="{Binding CutFrom, StringFormat=hh\\:mm\\:ss\\.fff}"
-                       FontFamily="Consolas,Menlo,Courier New" FontSize="11"
-                       Foreground="#f0f0f0" />
+                       Foreground="#aaaaaa" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" Classes="segmentTime"
+                     Text="{Binding CutFrom, Converter={StaticResource TimeSpanFff}}"
+                     GotFocus="SegmentTimeBox_GotFocus"
+                     LostFocus="SegmentTimeBox_LostFocus"
+                     KeyDown="SegmentTimeBox_KeyDown"
+                     ToolTip.Tip="Type a timestamp (hh:mm:ss.fff) and press Enter or Tab" />
           </Grid>
           <Grid ColumnDefinitions="40,*">
             <TextBlock Grid.Column="0" Text="End"
                        FontFamily="Consolas,Menlo,Courier New" FontSize="11"
-                       Foreground="#aaaaaa" />
-            <TextBlock Grid.Column="1"
-                       Text="{Binding CutTo, StringFormat=hh\\:mm\\:ss\\.fff}"
-                       FontFamily="Consolas,Menlo,Courier New" FontSize="11"
-                       Foreground="#f0f0f0" />
+                       Foreground="#aaaaaa" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" Classes="segmentTime"
+                     Text="{Binding CutTo, Converter={StaticResource TimeSpanFff}}"
+                     GotFocus="SegmentTimeBox_GotFocus"
+                     LostFocus="SegmentTimeBox_LostFocus"
+                     KeyDown="SegmentTimeBox_KeyDown"
+                     ToolTip.Tip="Type a timestamp (hh:mm:ss.fff) and press Enter or Tab" />
           </Grid>
           <Grid ColumnDefinitions="40,*">
             <TextBlock Grid.Column="0" Text="Δ"
@@ -132,6 +138,21 @@
     <Style Selector="ListBox.fill > ListBoxItem">
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="6,2" />
+    </Style>
+    <!-- Inline editable timestamp inside segment list rows. Borderless / transparent
+         until focused so it reads like a label until the user clicks in. -->
+    <Style Selector="TextBox.segmentTime">
+      <Setter Property="FontFamily" Value="Consolas,Menlo,Courier New" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="#f0f0f0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Height" Value="18" />
+    </Style>
+    <Style Selector="TextBox.segmentTime:focus">
+      <Setter Property="Background" Value="#222a35" />
     </Style>
     <!-- Tiny circular delete button, dim by default, red on hover. -->
     <Style Selector="Button.segment-delete">

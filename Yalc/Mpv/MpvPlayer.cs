@@ -414,6 +414,27 @@ public sealed class MpvPlayer : IDisposable
         LibMpv.CommandArgs(_handle, "screenshot-to-file", path, "video");
     }
 
+    /// <summary>
+    /// Playback speed multiplier (1.0 = normal). Setter clamps to [0.1, 8.0] —
+    /// mpv accepts wider ranges but anything outside is rarely useful and risks
+    /// audio resampler issues.
+    /// </summary>
+    public double PlaybackSpeed
+    {
+        get
+        {
+            if (_handle == IntPtr.Zero) return 1.0;
+            return LibMpv.GetProperty(_handle, "speed", MpvFormat.Double, out double v) == 0 ? v : 1.0;
+        }
+        set
+        {
+            EnsureInit();
+            var clamped = Math.Clamp(value, 0.1, 8.0);
+            LibMpv.SetPropertyString(_handle, "speed",
+                clamped.ToString("R", CultureInfo.InvariantCulture));
+        }
+    }
+
     public double Duration
     {
         get

@@ -26,6 +26,8 @@ public static class HotkeyHelp
             new("Alt + ← / →", "Step to previous / next keyframe (≈)"),
             new("L", "Loop segment under playhead (toggle)"),
             new("P", "Save current frame as PNG"),
+            new("[ / ]", "Slow down / speed up playback"),
+            new("\\", "Reset playback speed to 1×"),
         }),
         new("Segments", new HotkeyEntry[]
         {

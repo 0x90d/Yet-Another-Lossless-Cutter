@@ -44,6 +44,15 @@ public partial class MainWindow : Window
 
     // Active silence-detection scan. Click-while-running cancels.
     private CancellationTokenSource? _silenceCts;
+
+    // Snapshot of the segment being edited via an inline time TextBox. Set on
+    // GotFocus, used on LostFocus to push a single ChangeSegmentTimesAction per
+    // edit. Whole-segment snapshot (both bounds) so the action restores the
+    // pre-edit state even if the binding clamped against the other bound.
+    private VideoSegment? _editingSegment;
+    private double _editingOldFrom;
+    private double _editingOldTo;
+    private string _editingOriginalText = string.Empty;
     private string? _extractorLoadedPath;
     private CancellationTokenSource? _baseThumbCts;
     private CancellationTokenSource? _zoomThumbCts;
@@ -2437,12 +2446,81 @@ public partial class MainWindow : Window
             case Key.C: EnqueueAndStart(); e.Handled = true; break;
             case Key.L: ToggleLoopAtPlayhead(); e.Handled = true; break;
             case Key.P: CaptureFrame(); e.Handled = true; break;
+            case Key.OemOpenBrackets:  AdjustPlaybackSpeed(0.8); e.Handled = true; break;
+            case Key.OemCloseBrackets: AdjustPlaybackSpeed(1.25); e.Handled = true; break;
+            case Key.OemBackslash:
+            case Key.OemPipe:          ResetPlaybackSpeed(); e.Handled = true; break;
         }
     }
 
     private void LoopButton_Click(object? sender, RoutedEventArgs e) => ToggleLoopAtPlayhead();
 
     private void FrameCaptureButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); CaptureFrame(); }
+
+    private void AdjustPlaybackSpeed(double factor)
+    {
+        if (!_player.IsInitialized) return;
+        _player.PlaybackSpeed = _player.PlaybackSpeed * factor;
+        SetStatus($"speed: {_player.PlaybackSpeed:0.##}×");
+    }
+
+    private void ResetPlaybackSpeed()
+    {
+        if (!_player.IsInitialized) return;
+        _player.PlaybackSpeed = 1.0;
+        SetStatus("speed: 1×");
+    }
+
+    /// <summary>
+    /// Snapshot the segment's bounds when the user starts editing one of its time
+    /// TextBoxes. Used on LostFocus to push one undo entry per edit instead of one
+    /// per keystroke (the binding fires per-character via TextChanged otherwise).
+    /// </summary>
+    private void SegmentTimeBox_GotFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb && tb.DataContext is VideoSegment seg)
+        {
+            _editingSegment = seg;
+            _editingOldFrom = seg.CutFromSeconds;
+            _editingOldTo = seg.CutToSeconds;
+            _editingOriginalText = tb.Text ?? string.Empty;
+            tb.SelectAll();
+        }
+    }
+
+    /// <summary>Push one undo entry if the segment's bounds changed since GotFocus.</summary>
+    private void SegmentTimeBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (_editingSegment is { } seg
+            && (Math.Abs(seg.CutFromSeconds - _editingOldFrom) > 1e-6
+                || Math.Abs(seg.CutToSeconds - _editingOldTo) > 1e-6))
+        {
+            _undo.Push(new Undo.ChangeSegmentTimesAction(
+                seg, _editingOldFrom, _editingOldTo,
+                seg.CutFromSeconds, seg.CutToSeconds));
+        }
+        _editingSegment = null;
+    }
+
+    /// <summary>Enter commits the edit (focus loss flushes the binding); Esc reverts.</summary>
+    private void SegmentTimeBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox tb) return;
+        if (e.Key == Key.Enter || e.Key == Key.Return)
+        {
+            this.Focus();   // moves focus → triggers LostFocus → binding writes back
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            // Restore the pre-edit text so LostFocus's binding round-trip is a no-op,
+            // and clear the editing snapshot so no undo entry is pushed.
+            tb.Text = _editingOriginalText;
+            _editingSegment = null;
+            this.Focus();
+            e.Handled = true;
+        }
+    }
 
     /// <summary>
     /// Save the current video frame as PNG. Filename is the source stem plus the
