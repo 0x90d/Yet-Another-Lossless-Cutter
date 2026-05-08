@@ -386,6 +386,22 @@ public sealed class MpvPlayer : IDisposable
         LibMpv.CommandArgs(_handle, "frame-back-step");
     }
 
+    /// <summary>
+    /// Seek by <paramref name="seconds"/> from current position and snap to the
+    /// keyframe at-or-before the target. Used for next-/prev-keyframe navigation
+    /// so the user can see where a lossless cut will actually land.
+    /// Note: mpv's keyframe seek snaps to the keyframe ≤ target time, so the delta
+    /// must exceed the file's GOP size to advance. ~1s suits typical stream/screen
+    /// recordings (1–2s GOPs); files with longer GOPs may appear to "stick" and
+    /// would benefit from a precomputed keyframe index instead.
+    /// </summary>
+    public void SeekKeyframeRelative(double seconds)
+    {
+        EnsureInit();
+        LibMpv.CommandArgs(_handle, "seek",
+            seconds.ToString("R", CultureInfo.InvariantCulture), "relative+keyframes");
+    }
+
     public double Duration
     {
         get

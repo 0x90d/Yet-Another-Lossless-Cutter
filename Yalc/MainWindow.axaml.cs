@@ -32,6 +32,12 @@ public partial class MainWindow : Window
     private double _duration;
     private bool _isPaused = true;
     private string? _currentFile;
+
+    // A-B loop state. When _loopSegment is non-null, TimePosChanged seeks back to
+    // its start whenever natural playback crosses its end. Cleared on file change,
+    // when the segment is removed, or by toggling Loop off.
+    private VideoSegment? _loopSegment;
+    private double _lastReportedPos;
     private string? _extractorLoadedPath;
     private CancellationTokenSource? _baseThumbCts;
     private CancellationTokenSource? _zoomThumbCts;
@@ -144,6 +150,29 @@ public partial class MainWindow : Window
             // Update playhead — but don't fight a drag.
             Timeline.Position = Math.Clamp(t, 0, _duration > 0 ? _duration : 0);
             PositionLabel.Text = FormatTime(t);
+
+            // A-B loop: only fire when playback crosses the loop segment's end via
+            // natural progression (small delta from last report). This avoids
+            // re-snapping the user back when they manually scrub past the end.
+            if (_loopSegment is { } seg)
+            {
+                if (!Timeline.Segments.Contains(seg))
+                {
+                    SetLoopSegment(null);
+                }
+                else
+                {
+                    var delta = t - _lastReportedPos;
+                    var natural = delta > 0 && delta < 1.0;
+                    if (natural
+                        && _lastReportedPos >= seg.CutFromSeconds
+                        && t >= seg.CutToSeconds - 0.05)
+                    {
+                        _player.SeekAbsolute(seg.CutFromSeconds, exact: true);
+                    }
+                }
+            }
+            _lastReportedPos = t;
         });
         _player.PauseChanged += p => Dispatcher.UIThread.Post(() =>
         {
@@ -155,6 +184,8 @@ public partial class MainWindow : Window
             // New file = fresh full-view (the timeline preserves zoom across mpv
             // duration re-reports for the same file, so it won't reset itself).
             Timeline.ResetView();
+            SetLoopSegment(null);
+            _lastReportedPos = 0;
             // Surface any chapter markers the file ships with. Most stream-recorder
             // .ts files have none; mainstream MKV/MP4s usually do.
             Timeline.Markers.Clear();
@@ -2210,6 +2241,10 @@ public partial class MainWindow : Window
         switch (e.Key)
         {
             case Key.Space: _player.TogglePause(); e.Handled = true; break;
+            case Key.Left when (e.KeyModifiers & KeyModifiers.Alt) != 0:
+                _player.SeekKeyframeRelative(-1.0); e.Handled = true; break;
+            case Key.Right when (e.KeyModifiers & KeyModifiers.Alt) != 0:
+                _player.SeekKeyframeRelative(+1.0); e.Handled = true; break;
             case Key.Left: Seek(-1); e.Handled = true; break;
             case Key.Right: Seek(+1); e.Handled = true; break;
             case Key.OemComma: _player.FrameBackStep(); e.Handled = true; break;
@@ -2218,7 +2253,38 @@ public partial class MainWindow : Window
             case Key.E: SetOutPoint(); e.Handled = true; break;
             case Key.A: AddSegment(); e.Handled = true; break;
             case Key.C: EnqueueAndStart(); e.Handled = true; break;
+            case Key.L: ToggleLoopAtPlayhead(); e.Handled = true; break;
         }
+    }
+
+    private void LoopButton_Click(object? sender, RoutedEventArgs e) => ToggleLoopAtPlayhead();
+
+    /// <summary>
+    /// Toggle A-B loop. When off, finds the segment under the playhead and loops it.
+    /// When on, clears the loop. If the playhead isn't inside any segment when
+    /// turning on, this is a no-op so the user gets feedback (the button doesn't
+    /// stick on if there's nothing to loop).
+    /// </summary>
+    private void ToggleLoopAtPlayhead()
+    {
+        if (_loopSegment != null)
+        {
+            SetLoopSegment(null);
+            return;
+        }
+        var t = Timeline.Position;
+        VideoSegment? hit = null;
+        foreach (var seg in Timeline.Segments)
+        {
+            if (t >= seg.CutFromSeconds && t <= seg.CutToSeconds) { hit = seg; break; }
+        }
+        SetLoopSegment(hit);
+    }
+
+    private void SetLoopSegment(VideoSegment? seg)
+    {
+        _loopSegment = seg;
+        LoopButton.IsChecked = seg != null;
     }
 
     private static string FormatTime(double seconds)

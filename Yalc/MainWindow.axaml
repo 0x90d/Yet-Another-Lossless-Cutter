@@ -439,6 +439,10 @@
             <Button Content="►"   Click="FrameForwardButton_Click"
                     Padding="10,6"
                     ToolTip.Tip="Step 1 frame fwd ( . )" />
+            <ToggleButton x:Name="LoopButton" Content="⟳"
+                    Padding="10,6"
+                    Click="LoopButton_Click"
+                    ToolTip.Tip="Loop segment under playhead (L)" />
           </StackPanel>
           <TextBlock Grid.Column="2" x:Name="DurationLabel" VerticalAlignment="Center"
                      Margin="14,0" FontFamily="Consolas,Menlo,Courier New"
