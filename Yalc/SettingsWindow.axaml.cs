@@ -75,7 +75,7 @@ public partial class SettingsWindow : Window
                 Margin = new Thickness(0, 0, 0, 10),
                 Child = stack,
             };
-            SettingsRoot.Children.Add(card);
+            PluginsRoot.Children.Add(card);
         }
     }
 
@@ -117,7 +117,7 @@ public partial class SettingsWindow : Window
             Margin = new Thickness(0, 0, 0, 10),
             Child = stack,
         };
-        SettingsRoot.Children.Add(card);
+        PluginsRoot.Children.Add(card);
     }
 
     /// <summary>
@@ -161,7 +161,7 @@ public partial class SettingsWindow : Window
             Margin = new Thickness(0, 0, 0, 10),
             Child = stack,
         };
-        SettingsRoot.Children.Add(card);
+        PluginsRoot.Children.Add(card);
     }
 
     private async void PickOutputDir_Click(object? sender, RoutedEventArgs e)

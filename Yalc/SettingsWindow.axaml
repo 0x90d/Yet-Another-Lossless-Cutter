@@ -3,13 +3,13 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="using:YetAnotherLosslessCutter"
-        mc:Ignorable="d" d:DesignWidth="540" d:DesignHeight="640"
+        mc:Ignorable="d" d:DesignWidth="780" d:DesignHeight="620"
         x:Class="YetAnotherLosslessCutter.SettingsWindow"
         x:DataType="local:Settings"
         DataContext="{x:Static local:Settings.Instance}"
         Title="Settings"
         Icon="avares://Yalc/Assets/Icon.ico"
-        Width="540" Height="640"
+        Width="780" Height="620"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource SemiColorBackground0}">
 
@@ -37,178 +37,216 @@
       <Setter Property="Foreground" Value="#cccccc" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
+    <Style Selector="TextBlock.fieldHint">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="10,0,0,0" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="{DynamicResource SemiColorTextSecondary}" />
+    </Style>
+    <!-- TabItem styling: roomy headers on the left strip. -->
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="MinHeight" Value="34" />
+    </Style>
   </Window.Styles>
 
   <Grid RowDefinitions="*,Auto">
-    <ScrollViewer Grid.Row="0">
-      <StackPanel x:Name="SettingsRoot" Margin="20,16" Spacing="0">
+    <TabControl Grid.Row="0" TabStripPlacement="Left" Padding="0">
 
-        <!-- Cutting -->
-        <Border Classes="card">
-          <StackPanel Spacing="0">
-            <TextBlock Text="Cutting" Classes="section" />
-            <ToggleSwitch Content="Remove audio" IsChecked="{Binding RemoveAudio}" />
-            <ToggleSwitch Content="Merge segments" IsChecked="{Binding MergeSegments}" />
-            <ToggleSwitch Content="Include all streams" IsChecked="{Binding IncludeAllStreams}" />
-            <ToggleSwitch Content="Delete source file after done" IsChecked="{Binding DeleteSourceFileAfterDone}" />
-            <ToggleSwitch Content="Low cutting process priority"
-                          IsChecked="{Binding LowCuttingProcessPriority}"
-                          ToolTip.Tip="Run ffmpeg at BelowNormal priority so cutting doesn't fight your foreground apps for CPU." />
+      <!-- ─── Cutting ─────────────────────────────────────────────── -->
+      <TabItem Header="Cutting">
+        <ScrollViewer>
+          <StackPanel Margin="20,16" Spacing="0">
+            <Border Classes="card">
+              <StackPanel Spacing="0">
+                <TextBlock Text="Cutting" Classes="section" />
+                <ToggleSwitch Content="Remove audio" IsChecked="{Binding RemoveAudio}" />
+                <ToggleSwitch Content="Merge segments" IsChecked="{Binding MergeSegments}" />
+                <ToggleSwitch Content="Include all streams" IsChecked="{Binding IncludeAllStreams}" />
+                <ToggleSwitch Content="Delete source file after done" IsChecked="{Binding DeleteSourceFileAfterDone}" />
+                <ToggleSwitch Content="Low cutting process priority"
+                              IsChecked="{Binding LowCuttingProcessPriority}"
+                              ToolTip.Tip="Run ffmpeg at BelowNormal priority so cutting doesn't fight your foreground apps for CPU." />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="0">
+                <TextBlock Text="Output" Classes="section" />
+                <ToggleSwitch Content="Save to source folder" IsChecked="{Binding SaveToSourceFolder}" />
+                <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                  <TextBox Grid.Column="0"
+                           Text="{Binding OutputDirectory}"
+                           PlaceholderText="Output directory…"
+                           IsEnabled="{Binding !SaveToSourceFolder}" />
+                  <Button Grid.Column="1" Content="…"
+                          Click="PickOutputDir_Click"
+                          Padding="14,4" Margin="6,0,0,0"
+                          IsEnabled="{Binding !SaveToSourceFolder}"
+                          ToolTip.Tip="Pick output folder" />
+                </Grid>
+
+                <TextBlock Text="Filename template" Margin="0,12,0,2" FontWeight="SemiBold" />
+                <TextBox x:Name="OutputTemplateBox"
+                         Text="{Binding OutputFilenameTemplate}"
+                         TextChanged="OutputTemplateBox_TextChanged"
+                         PlaceholderText="{}{name}-{start}-{end}{ext}" />
+                <TextBlock x:Name="OutputTemplatePreview"
+                           Margin="0,4,0,0" FontFamily="Consolas,Menlo,Courier New"
+                           Foreground="{DynamicResource SemiColorTextSecondary}"
+                           Text="" />
+                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource SemiColorTextSecondary}"
+                           Text="{}Tokens: {name} {ext} {start} {end} {duration} {date} {time} {datetime} {index}.  Case-insensitive. Unknown tokens are left in place." />
+              </StackPanel>
+            </Border>
           </StackPanel>
-        </Border>
+        </ScrollViewer>
+      </TabItem>
 
-        <!-- Output -->
-        <Border Classes="card">
-          <StackPanel Spacing="0">
-            <TextBlock Text="Output" Classes="section" />
-            <ToggleSwitch Content="Save to source folder" IsChecked="{Binding SaveToSourceFolder}" />
-            <Grid ColumnDefinitions="*,Auto" Margin="0,4">
-              <TextBox Grid.Column="0"
-                       Text="{Binding OutputDirectory}"
-                       PlaceholderText="Output directory…"
-                       IsEnabled="{Binding !SaveToSourceFolder}" />
-              <Button Grid.Column="1" Content="…"
-                      Click="PickOutputDir_Click"
-                      Padding="14,4" Margin="6,0,0,0"
-                      IsEnabled="{Binding !SaveToSourceFolder}"
-                      ToolTip.Tip="Pick output folder" />
-            </Grid>
+      <!-- ─── Silence detection ───────────────────────────────────── -->
+      <TabItem Header="Silence detection">
+        <ScrollViewer>
+          <StackPanel Margin="20,16" Spacing="0">
+            <Border Classes="card">
+              <StackPanel Spacing="0">
+                <TextBlock Text="Silence detection" Classes="section" />
+                <TextBlock Margin="0,0,0,8" TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource SemiColorTextSecondary}"
+                           Text="Auto-cut tuning. Run from the &quot;↓ silence&quot; toolbar button." />
+                <Grid ColumnDefinitions="170,120,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,4">
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Threshold (dB)" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="0" Grid.Column="1"
+                                 Value="{Binding SilenceThresholdDb}"
+                                 Minimum="-90" Maximum="0" Increment="1"
+                                 FormatString="0" Margin="0,2" />
+                  <TextBlock Grid.Row="0" Grid.Column="2" Classes="fieldHint"
+                             Text="Lower = stricter (true silence only). Higher = catches quiet passages." />
 
-            <TextBlock Text="Filename template" Margin="0,12,0,2" FontWeight="SemiBold" />
-            <TextBox x:Name="OutputTemplateBox"
-                     Text="{Binding OutputFilenameTemplate}"
-                     TextChanged="OutputTemplateBox_TextChanged"
-                     PlaceholderText="{}{name}-{start}-{end}{ext}" />
-            <TextBlock x:Name="OutputTemplatePreview"
-                       Margin="0,4,0,0" FontFamily="Consolas,Menlo,Courier New"
-                       Foreground="{DynamicResource SemiColorTextSecondary}"
-                       Text="" />
-            <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="11"
-                       Foreground="{DynamicResource SemiColorTextSecondary}"
-                       Text="{}Tokens: {name} {ext} {start} {end} {duration} {date} {time} {datetime} {index}.  Case-insensitive. Unknown tokens are left in place." />
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Min silence (s)" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="1" Grid.Column="1"
+                                 Value="{Binding SilenceMinDurationSeconds}"
+                                 Minimum="0.05" Maximum="60" Increment="0.1"
+                                 FormatString="0.00" Margin="0,2" />
+                  <TextBlock Grid.Row="1" Grid.Column="2" Classes="fieldHint"
+                             Text="Shorter silences than this don't count as cut points." />
+
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Min speech floor (s)" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="2" Grid.Column="1"
+                                 Value="{Binding SilenceMinSpeechDurationSeconds}"
+                                 Minimum="0" Maximum="600" Increment="0.5"
+                                 FormatString="0.0" Margin="0,2" />
+                  <TextBlock Grid.Row="2" Grid.Column="2" Classes="fieldHint"
+                             Text="Absolute minimum kept-segment length. Protects short files." />
+
+                  <TextBlock Grid.Row="3" Grid.Column="0" Text="Min speech (% of file)" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Row="3" Grid.Column="1"
+                                 Value="{Binding SilenceMinSpeechPercentOfDuration}"
+                                 Minimum="0" Maximum="10" Increment="0.1"
+                                 FormatString="0.0" Margin="0,2" />
+                  <TextBlock Grid.Row="3" Grid.Column="2" Classes="fieldHint"
+                             Text="Scales with duration: 0.3 ≈ 32s/3h, 0.9s/5min. Effective = max(floor, %)." />
+                </Grid>
+              </StackPanel>
+            </Border>
           </StackPanel>
-        </Border>
+        </ScrollViewer>
+      </TabItem>
 
-        <!-- Silence detection -->
-        <Border Classes="card">
-          <StackPanel Spacing="0">
-            <TextBlock Text="Silence detection" Classes="section" />
-            <TextBlock Margin="0,0,0,8" TextWrapping="Wrap" FontSize="11"
-                       Foreground="{DynamicResource SemiColorTextSecondary}"
-                       Text="Auto-cut tuning. Run from the &quot;↓ silence&quot; toolbar button." />
-            <Grid ColumnDefinitions="180,120,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,4">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Threshold (dB)" VerticalAlignment="Center" />
-              <NumericUpDown Grid.Row="0" Grid.Column="1"
-                             Value="{Binding SilenceThresholdDb}"
-                             Minimum="-90" Maximum="0" Increment="1"
-                             FormatString="0" Margin="0,2" />
-              <TextBlock Grid.Row="0" Grid.Column="2"
-                         FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"
-                         Foreground="{DynamicResource SemiColorTextSecondary}"
-                         Text="Lower = stricter (true silence only). Higher = catches quiet passages." />
-
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Min silence (s)" VerticalAlignment="Center" />
-              <NumericUpDown Grid.Row="1" Grid.Column="1"
-                             Value="{Binding SilenceMinDurationSeconds}"
-                             Minimum="0.05" Maximum="60" Increment="0.1"
-                             FormatString="0.00" Margin="0,2" />
-              <TextBlock Grid.Row="1" Grid.Column="2"
-                         FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"
-                         Foreground="{DynamicResource SemiColorTextSecondary}"
-                         Text="Shorter silences than this don't count as cut points." />
-
-              <TextBlock Grid.Row="2" Grid.Column="0" Text="Min speech floor (s)" VerticalAlignment="Center" />
-              <NumericUpDown Grid.Row="2" Grid.Column="1"
-                             Value="{Binding SilenceMinSpeechDurationSeconds}"
-                             Minimum="0" Maximum="600" Increment="0.5"
-                             FormatString="0.0" Margin="0,2" />
-              <TextBlock Grid.Row="2" Grid.Column="2"
-                         FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"
-                         Foreground="{DynamicResource SemiColorTextSecondary}"
-                         Text="Absolute minimum kept-segment length. Protects short files." />
-
-              <TextBlock Grid.Row="3" Grid.Column="0" Text="Min speech (% of file)" VerticalAlignment="Center" />
-              <NumericUpDown Grid.Row="3" Grid.Column="1"
-                             Value="{Binding SilenceMinSpeechPercentOfDuration}"
-                             Minimum="0" Maximum="10" Increment="0.1"
-                             FormatString="0.0" Margin="0,2" />
-              <TextBlock Grid.Row="3" Grid.Column="2"
-                         FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"
-                         Foreground="{DynamicResource SemiColorTextSecondary}"
-                         Text="Scales with duration: 0.3 ≈ 32s/3h, 0.9s/5min. Effective = max(floor, %)." />
-            </Grid>
+      <!-- ─── Playback ────────────────────────────────────────────── -->
+      <TabItem Header="Playback">
+        <ScrollViewer>
+          <StackPanel Margin="20,16" Spacing="0">
+            <Border Classes="card">
+              <StackPanel Spacing="0">
+                <TextBlock Text="Preview &amp; Timeline" Classes="section" />
+                <ToggleSwitch Content="Generate timeline frames"
+                              IsChecked="{Binding GenerateTimelineFrames}"
+                              ToolTip.Tip="Off = skip ffmpeg thumbnail strip on the timeline (faster file open on slow disks)" />
+                <ToggleSwitch Content="Generate audio waveform"
+                              IsChecked="{Binding GenerateWaveform}"
+                              ToolTip.Tip="On = decode audio peaks via ffmpeg and overlay a translucent waveform on the timeline. Helps spot dialogue boundaries and silences. Adds a few seconds to file open." />
+                <ToggleSwitch Content="Always mute preview audio"
+                              IsChecked="{Binding AlwaysMuteAudio}"
+                              ToolTip.Tip="Fast seeking, no playback sound." />
+                <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,2">
+                  <TextBlock Grid.Column="0" Classes="label" Text="Auto-seek delay (ms)" />
+                  <NumericUpDown Grid.Column="1"
+                                 Value="{Binding AutoSeekDelayMs}"
+                                 Minimum="0" Maximum="1000" Increment="50"
+                                 Width="140"
+                                 ToolTip.Tip="Pause between auto-repeat seek firings. Larger = easier to read what you're scrubbing past; smaller = snappier." />
+                </Grid>
+              </StackPanel>
+            </Border>
           </StackPanel>
-        </Border>
+        </ScrollViewer>
+      </TabItem>
 
-        <!-- Interface (toolbar button visibility) -->
-        <Border Classes="card">
-          <StackPanel Spacing="0">
-            <TextBlock Text="Interface" Classes="section" />
-            <TextBlock Margin="0,0,0,6" TextWrapping="Wrap" FontSize="11"
-                       Foreground="{DynamicResource SemiColorTextSecondary}"
-                       Text="Hide buttons you don't use. Defaults are all on." />
-            <ToggleSwitch Content="Jump magnitude buttons (1m / 10s / 1s)"
-                          IsChecked="{Binding ShowJumpButtons}" />
-            <ToggleSwitch Content="Frame-step buttons (◄ ►)"
-                          IsChecked="{Binding ShowFrameStepButtons}" />
-            <ToggleSwitch Content="Loop button (⟳)"
-                          IsChecked="{Binding ShowLoopButton}" />
-            <ToggleSwitch Content="Detect silence button"
-                          IsChecked="{Binding ShowSilenceButton}" />
-            <ToggleSwitch Content="Next file button"
-                          IsChecked="{Binding ShowNextFileButton}" />
-            <ToggleSwitch Content="Delete file button"
-                          IsChecked="{Binding ShowDeleteFileButton}" />
+      <!-- ─── Queue ───────────────────────────────────────────────── -->
+      <TabItem Header="Queue">
+        <ScrollViewer>
+          <StackPanel Margin="20,16" Spacing="0">
+            <Border Classes="card">
+              <StackPanel Spacing="0">
+                <TextBlock Text="Queue" Classes="section" />
+                <ToggleSwitch Content="Auto-start queue when cutting" IsChecked="{Binding AutoStartQueue}" />
+                <ToggleSwitch Content="Remove finished segments from queue" IsChecked="{Binding RemoveFinishedSegments}" />
+                <ToggleSwitch Content="Shutdown PC when queue is done"
+                              IsChecked="{Binding ShutdownWhenDone}"
+                              ToolTip.Tip="Schedules a Windows shutdown after a 15s confirmation countdown." />
+              </StackPanel>
+            </Border>
           </StackPanel>
-        </Border>
+        </ScrollViewer>
+      </TabItem>
 
-        <!-- Queue -->
-        <Border Classes="card">
-          <StackPanel Spacing="0">
-            <TextBlock Text="Queue" Classes="section" />
-            <ToggleSwitch Content="Auto-start queue when cutting" IsChecked="{Binding AutoStartQueue}" />
-            <ToggleSwitch Content="Remove finished segments from queue" IsChecked="{Binding RemoveFinishedSegments}" />
-            <ToggleSwitch Content="Shutdown PC when queue is done"
-                          IsChecked="{Binding ShutdownWhenDone}"
-                          ToolTip.Tip="Schedules a Windows shutdown after a 15s confirmation countdown." />
+      <!-- ─── Appearance ──────────────────────────────────────────── -->
+      <TabItem Header="Appearance">
+        <ScrollViewer>
+          <StackPanel Margin="20,16" Spacing="0">
+            <Border Classes="card">
+              <StackPanel Spacing="0">
+                <TextBlock Text="Interface" Classes="section" />
+                <TextBlock Margin="0,0,0,6" TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource SemiColorTextSecondary}"
+                           Text="Hide buttons you don't use. Defaults are all on." />
+                <ToggleSwitch Content="Jump magnitude buttons (1m / 10s / 1s)"
+                              IsChecked="{Binding ShowJumpButtons}" />
+                <ToggleSwitch Content="Frame-step buttons (◄ ►)"
+                              IsChecked="{Binding ShowFrameStepButtons}" />
+                <ToggleSwitch Content="Loop button (⟳)"
+                              IsChecked="{Binding ShowLoopButton}" />
+                <ToggleSwitch Content="Detect silence button"
+                              IsChecked="{Binding ShowSilenceButton}" />
+                <ToggleSwitch Content="Next file button"
+                              IsChecked="{Binding ShowNextFileButton}" />
+                <ToggleSwitch Content="Delete file button"
+                              IsChecked="{Binding ShowDeleteFileButton}" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="0">
+                <TextBlock Text="Window" Classes="section" />
+                <ToggleSwitch Content="Open maximized" IsChecked="{Binding OpenMaximized}" />
+                <ToggleSwitch Content="Show confirmation prompts" IsChecked="{Binding ShowConfirmationPrompts}" />
+              </StackPanel>
+            </Border>
           </StackPanel>
-        </Border>
+        </ScrollViewer>
+      </TabItem>
 
-        <!-- Preview &amp; Timeline -->
-        <Border Classes="card">
-          <StackPanel Spacing="0">
-            <TextBlock Text="Preview &amp; Timeline" Classes="section" />
-            <ToggleSwitch Content="Generate timeline frames"
-                          IsChecked="{Binding GenerateTimelineFrames}"
-                          ToolTip.Tip="Off = skip ffmpeg thumbnail strip on the timeline (faster file open on slow disks)" />
-            <ToggleSwitch Content="Generate audio waveform"
-                          IsChecked="{Binding GenerateWaveform}"
-                          ToolTip.Tip="On = decode audio peaks via ffmpeg and overlay a translucent waveform on the timeline. Helps spot dialogue boundaries and silences. Adds a few seconds to file open." />
-            <ToggleSwitch Content="Always mute preview audio"
-                          IsChecked="{Binding AlwaysMuteAudio}"
-                          ToolTip.Tip="Fast seeking, no playback sound." />
-            <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,2">
-              <TextBlock Grid.Column="0" Classes="label" Text="Auto-seek delay (ms)" />
-              <NumericUpDown Grid.Column="1"
-                             Value="{Binding AutoSeekDelayMs}"
-                             Minimum="0" Maximum="1000" Increment="50"
-                             Width="140"
-                             ToolTip.Tip="Pause between auto-repeat seek firings. Larger = easier to read what you're scrubbing past; smaller = snappier." />
-            </Grid>
-          </StackPanel>
-        </Border>
+      <!-- ─── Plugins ─────────────────────────────────────────────── -->
+      <TabItem Header="Plugins">
+        <ScrollViewer>
+          <StackPanel x:Name="PluginsRoot" Margin="20,16" Spacing="0" />
+        </ScrollViewer>
+      </TabItem>
 
-        <!-- Window -->
-        <Border Classes="card">
-          <StackPanel Spacing="0">
-            <TextBlock Text="Window" Classes="section" />
-            <ToggleSwitch Content="Open maximized" IsChecked="{Binding OpenMaximized}" />
-            <ToggleSwitch Content="Show confirmation prompts" IsChecked="{Binding ShowConfirmationPrompts}" />
-          </StackPanel>
-        </Border>
-
-      </StackPanel>
-    </ScrollViewer>
+    </TabControl>
 
     <Grid Grid.Row="1" Background="{DynamicResource SemiColorBackground1}"
           ColumnDefinitions="*,Auto" Margin="0">
