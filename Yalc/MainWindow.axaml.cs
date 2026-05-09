@@ -1510,16 +1510,38 @@ public partial class MainWindow : Window
     private void CutButton_Click(object? sender, RoutedEventArgs e) { StopAutoRepeat(); EnqueueAndStart(); }
 
     // Right-click on these buttons starts auto-seek +1m (matches DeleteFileButton).
+    // The "+60" default can be overridden per-file by an IAutoSeekRule plugin —
+    // e.g., a rule that says "files matching 'preview/' use +10s instead." See
+    // ResolveAutoSeekDefault below.
     private void SetInButton_PointerPressed(object? sender, PointerPressedEventArgs e) =>
-        TryStartAutoRepeat(e, "setin-fwd60", +60);
+        TryStartAutoRepeat(e, "setin-fwd-default", +ResolveAutoSeekDefault());
     private void SetOutButton_PointerPressed(object? sender, PointerPressedEventArgs e) =>
-        TryStartAutoRepeat(e, "setout-fwd60", +60);
+        TryStartAutoRepeat(e, "setout-fwd-default", +ResolveAutoSeekDefault());
     private void AddSegmentButton_PointerPressed(object? sender, PointerPressedEventArgs e) =>
-        TryStartAutoRepeat(e, "addseg-fwd60", +60);
+        TryStartAutoRepeat(e, "addseg-fwd-default", +ResolveAutoSeekDefault());
     private void CutButton_PointerPressed(object? sender, PointerPressedEventArgs e) =>
-        TryStartAutoRepeat(e, "cut-fwd60", +60);
+        TryStartAutoRepeat(e, "cut-fwd-default", +ResolveAutoSeekDefault());
     private void NextFileButton_PointerPressed(object? sender, PointerPressedEventArgs e) =>
-        TryStartAutoRepeat(e, "next-fwd60", +60);
+        TryStartAutoRepeat(e, "next-fwd-default", +ResolveAutoSeekDefault());
+
+    /// <summary>
+    /// Default magnitude (seconds) for the right-click "+1m" auto-repeat. Plugins
+    /// implementing <see cref="Plugins.IAutoSeekRule"/> can override per-file —
+    /// the first non-null answer wins; otherwise the core default of 60s is used.
+    /// Pure / cheap; called on every right-click.
+    /// </summary>
+    private double ResolveAutoSeekDefault()
+    {
+        if (!string.IsNullOrEmpty(_currentFile))
+        {
+            foreach (var rule in PluginHost.Get<Plugins.IAutoSeekRule>())
+            {
+                var v = rule.GetAutoSeekSeconds(_currentFile);
+                if (v.HasValue) return v.Value;
+            }
+        }
+        return 60.0;
+    }
 
     /// <summary>
     /// Move all idle timeline segments into the processing queue and (per
@@ -1770,7 +1792,7 @@ public partial class MainWindow : Window
     // --- Delete current file ---
 
     private void DeleteFileButton_PointerPressed(object? sender, PointerPressedEventArgs e) =>
-        TryStartAutoRepeat(e, "delete-fwd60", +60);
+        TryStartAutoRepeat(e, "delete-fwd-default", +ResolveAutoSeekDefault());
 
     private async void DeleteFileButton_Click(object? sender, RoutedEventArgs e)
     {
