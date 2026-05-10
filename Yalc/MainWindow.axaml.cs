@@ -2397,7 +2397,7 @@ public partial class MainWindow : Window
                     MaxDuration = TimeSpan.FromSeconds(_duration),
                     CutFrom = TimeSpan.FromSeconds(from),
                     CutTo = TimeSpan.FromSeconds(to),
-                    ColorIndex = Timeline.Segments.Count,
+                    ColorIndex = SegmentPalette.PickUnusedIndex(Timeline.Segments.Select(s => s.ColorIndex)),
                 };
                 Timeline.Segments.Add(seg);
                 actions.Add(new Undo.AddSegmentAction(
@@ -2435,7 +2435,7 @@ public partial class MainWindow : Window
             CutTo = TimeSpan.FromSeconds(endSec),
             // Cycle through the palette so multiple segments are visually distinct
             // both on the timeline and in the segment list.
-            ColorIndex = Timeline.Segments.Count,
+            ColorIndex = SegmentPalette.PickUnusedIndex(Timeline.Segments.Select(s => s.ColorIndex)),
         };
         Timeline.Segments.Add(seg);
         _undo.Push(new Undo.AddSegmentAction(Timeline.Segments, seg, Timeline.Segments.Count - 1));

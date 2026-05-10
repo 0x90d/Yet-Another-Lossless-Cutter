@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Avalonia.Media;
 
 namespace YetAnotherLosslessCutter.Controls;
@@ -29,6 +30,27 @@ public static class SegmentPalette
         // Handle negative modulo correctly.
         var i = ((colorIndex % n) + n) % n;
         return _colors[i];
+    }
+
+    /// <summary>
+    /// Pick a palette slot not currently occupied by any existing segment, so a new
+    /// segment is visually distinct from all surviving ones. Falls back to the next
+    /// sequential index only when all palette slots are in use.
+    /// </summary>
+    public static int PickUnusedIndex(IEnumerable<int> existingIndices)
+    {
+        var n = _colors.Length;
+        var used = new bool[n];
+        var count = 0;
+        foreach (var idx in existingIndices)
+        {
+            var slot = ((idx % n) + n) % n;
+            used[slot] = true;
+            count++;
+        }
+        for (var i = 0; i < n; i++)
+            if (!used[i]) return i;
+        return count;
     }
 
     public static IBrush GetBrush(int colorIndex) => new SolidColorBrush(GetColor(colorIndex));
