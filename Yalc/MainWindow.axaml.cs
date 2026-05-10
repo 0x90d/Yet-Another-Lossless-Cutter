@@ -1304,11 +1304,28 @@ public partial class MainWindow : Window
     private bool TryAdvanceToNextFile()
     {
         if (_playlistIndex < 0) return false;
-        var nextIndex = _playlistIndex + 1;
-        if (nextIndex >= _filePlaylist.Count) return false;
-        _playlistIndex = nextIndex;
-        LoadCurrentPlaylistItem();
-        return true;
+        var skipped = 0;
+        while (_playlistIndex + 1 < _filePlaylist.Count)
+        {
+            var nextPath = _filePlaylist[_playlistIndex + 1];
+            if (File.Exists(nextPath))
+            {
+                _playlistIndex++;
+                LoadCurrentPlaylistItem();
+                if (skipped > 0)
+                    SetStatus($"skipped {skipped} missing file{(skipped == 1 ? "" : "s")}");
+                return true;
+            }
+            _filePlaylist.RemoveAt(_playlistIndex + 1);
+            skipped++;
+        }
+        if (skipped > 0)
+        {
+            UpdatePlaylistRemaining();
+            UpdateNextFileButtonState();
+            SetStatus($"end of playlist — skipped {skipped} missing file{(skipped == 1 ? "" : "s")}");
+        }
+        return false;
     }
 
     /// <summary>
@@ -1851,6 +1868,8 @@ public partial class MainWindow : Window
 
         AppendErrorLog($"[{tag}] {path} -> {lastError}");
         SetStatus($"delete failed: {lastError?.Message}");
+        await InfoDialog.ShowAsync(this, "Delete failed",
+            $"Could not delete this file:\n\n{path}\n\n{lastError?.Message}", "❌");
     }
 
     private void UpdateDeleteFileButtonState() =>
