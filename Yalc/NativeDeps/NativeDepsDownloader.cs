@@ -195,7 +195,7 @@ internal sealed class NativeDepsDownloader
     private static void ExtractLibmpvFromSevenZip(string archivePath, string targetDir)
     {
         Directory.CreateDirectory(targetDir);
-        using var archive = SevenZipArchive.Open(archivePath);
+        using var archive = SevenZipArchive.OpenArchive(archivePath);
         foreach (var entry in archive.Entries)
         {
             if (entry.IsDirectory || entry.Key == null) continue;

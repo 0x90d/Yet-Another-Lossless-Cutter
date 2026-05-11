@@ -21,25 +21,29 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.0.1" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.0.1" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
-    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.0">
+    <PackageReference Include="Avalonia" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.3" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.1">
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Semi.Avalonia" Version="12.0.1" />
-    <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.1.0" />
     <!-- SharpCompress provides .7z extraction for the libmpv auto-downloader.
          shinchiro's mpv-dev archive is the only well-maintained Windows libmpv
          source and ships .7z exclusively; .NET has no built-in 7z reader. -->
-    <PackageReference Include="SharpCompress" Version="0.39.0" />
+    <PackageReference Include="SharpCompress" Version="0.48.0" />
   </ItemGroup>
 
   <!-- Plugin abstractions library — defines the IOutputPathPlugin /
        ISettingsContribution / IStatusBadgeProvider / IFilePickerFilter contracts and the
        PluginHost registry. Always referenced. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Yalc.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Yalc.Plugins.Abstractions\Yalc.Plugins.Abstractions.csproj" />
   </ItemGroup>

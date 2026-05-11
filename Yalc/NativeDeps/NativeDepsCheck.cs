@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using FFmpeg.AutoGen;
 
 namespace YetAnotherLosslessCutter.NativeDeps;
 
@@ -35,12 +36,16 @@ internal static class NativeDepsCheck
         var dir = AppContext.BaseDirectory;
         // libmpv is one DLL; check for it directly.
         var libmpvMissing = !File.Exists(Path.Combine(dir, "libmpv-2.dll"));
-        // FFmpeg.AutoGen 8.0.0 binds against FFmpeg 8.x — the avcodec major is 62.
-        // One probe DLL is enough; if avcodec-62 is missing the others would be too
-        // (BtbN's archive ships them as a set or not at all).
-        var ffmpegMissing = !File.Exists(Path.Combine(dir, "avcodec-62.dll"));
+        // Probe the avcodec DLL whose major matches FFmpeg.AutoGen's binding — sourced
+        // from AutoGen's own version map so the probe automatically tracks future
+        // AutoGen bumps. One DLL is enough; BtbN's archive ships them as a set.
+        var ffmpegMissing = !File.Exists(Path.Combine(dir, AvcodecDllName()));
         return new MissingDeps(libmpvMissing, ffmpegMissing);
     }
+
+    // Probe filename derived from FFmpeg.AutoGen's binding map so the dep check stays
+    // in sync with the bindings across version bumps. Exposed to tests.
+    internal static string AvcodecDllName() => $"avcodec-{ffmpeg.LibraryVersionMap["avcodec"]}.dll";
 
     private static MissingDeps DetectUnix()
     {
@@ -74,7 +79,11 @@ internal static class NativeDepsCheck
     private static string LibmpvSoName() =>
         RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "libmpv.2.dylib" : "libmpv.so.2";
 
-    // libavcodec.so.NN / libavcodec.NN.dylib — major 62 matches FFmpeg.AutoGen 8.0.
-    private static string AvcodecSoName() =>
-        RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "libavcodec.62.dylib" : "libavcodec.so.62";
+    // libavcodec.so.NN / libavcodec.NN.dylib — major is sourced from FFmpeg.AutoGen's
+    // version map so the probe automatically tracks future AutoGen bumps.
+    internal static string AvcodecSoName()
+    {
+        var major = ffmpeg.LibraryVersionMap["avcodec"];
+        return RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? $"libavcodec.{major}.dylib" : $"libavcodec.so.{major}";
+    }
 }
