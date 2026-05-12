@@ -75,8 +75,15 @@ public partial class MainWindow : Window
     // Base layer is just enough to fill the visible strip (~20 cells) plus some hover variety.
     // For finer detail we rely on the on-demand zoom layer, which kicks in early.
     private const double ZoomLayerThreshold = 2.0;
-    private const int BaseLayerCount = 40;
-    private const int ZoomLayerCount = 100;
+    // Thumb counts are derived from the actual on-screen cell count
+    // (Timeline.Bounds + CellAspect) instead of fixed constants — most users
+    // never zoom and the old 40/100 counts caused 3-8× over-fetch at typical
+    // window sizes. Headroom factors give a small margin for window resize
+    // and (for the zoom layer) a step of further zoom-in without re-fetch.
+    private const double BaseLayerHeadroom = 1.25;   // ≈ 25% resize margin
+    private const double ZoomLayerHeadroom = 2.0;    // covers one extra zoom step within the same layer
+    private const int ThumbCountMin = 16;            // floor for tiny windows
+    private const int ThumbCountMax = 80;            // ceiling to keep extraction time bounded
     private const int MaxZoomLayers = 8;             // LRU cap — keep N most recent zoom layers
 
     public MainWindow()
@@ -690,6 +697,25 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// How many thumbnail frames to actually request from the extractor, based
+    /// on how many cells will fit in the current timeline strip. Falls back to
+    /// <see cref="ThumbCountMin"/> when the control hasn't been laid out yet
+    /// (extraction can fire before first measure on cold file load).
+    /// </summary>
+    private int ComputeThumbCount(double headroom)
+    {
+        var stripWidth = Timeline.Bounds.Width;
+        var stripTop = Timeline.RulerHeight + Timeline.MinimapHeight;
+        var stripHeight = Timeline.Bounds.Height - stripTop;
+        if (stripWidth <= 0 || stripHeight < 40)
+            return ThumbCountMin;
+        var idealCellW = stripHeight * Timeline.CellAspect;
+        var displayCells = Math.Max(1, (int)Math.Floor(stripWidth / idealCellW));
+        var raw = (int)Math.Ceiling(displayCells * headroom);
+        return Math.Clamp(raw, ThumbCountMin, ThumbCountMax);
+    }
+
     private async Task GenerateThumbnailsAsync(string path)
     {
         // Wait briefly for mpv to report SOMETHING, then probe with ffprobe in
@@ -746,8 +772,9 @@ public partial class MainWindow : Window
             // callback can land after SetStatus(null) and re-pin the message. Gate it.
             var done = false;
             var progress = new Progress<double>(p => { if (!done) SetThumbnailStatus($"base thumbnails… {p:P0}"); });
+            var baseCount = ComputeThumbCount(BaseLayerHeadroom);
             var frames = await _extractor.ExtractRangeAsync(0, duration,
-                count: BaseLayerCount, progress: progress, ct: ct);
+                count: baseCount, progress: progress, ct: ct);
             done = true;
             sw.Stop();
             if (ct.IsCancellationRequested) return;
@@ -783,9 +810,12 @@ public partial class MainWindow : Window
         }
 
         // Aspect-correct cell width to estimate how many cells the strip will show.
+        // (Use the actual CellAspect — the renderer packs cells at 1.5, not 16:9 1.78,
+        // so a 1.78-based estimate would under-count.)
         var stripWidth = Timeline.Bounds.Width;
-        var stripHeight = Math.Max(40, Timeline.Bounds.Height - 18);
-        var idealCellW = stripHeight * 16.0 / 9.0;
+        var stripTop = Timeline.RulerHeight + Timeline.MinimapHeight;
+        var stripHeight = Math.Max(40, Timeline.Bounds.Height - stripTop);
+        var idealCellW = stripHeight * Timeline.CellAspect;
         var displayCells = Math.Max(1, (int)Math.Floor(stripWidth / idealCellW));
         // We want a frame at least as fine as cell-width / 2 so adjacent cells get distinct frames.
         var requiredSecondsPerFrame = (viewDur / displayCells) * 0.5;
@@ -797,11 +827,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Cap thumb count by source frame rate so we never extract more thumbs than there are
-        // unique source frames in the requested span.
+        // Target count: enough cells for the current view plus headroom for one
+        // more zoom step. Capped by source FPS so we never extract more thumbs
+        // than there are unique source frames in the requested span.
         var fps = _extractor.SourceFps > 0 ? _extractor.SourceFps : 30.0;
-        var maxUseful = Math.Max(16, (int)Math.Ceiling(viewDur * fps));
-        var count = Math.Min(ZoomLayerCount, maxUseful);
+        var maxUseful = Math.Max(ThumbCountMin, (int)Math.Ceiling(viewDur * fps));
+        var requested = Math.Clamp(
+            (int)Math.Ceiling(displayCells * ZoomLayerHeadroom),
+            ThumbCountMin, ThumbCountMax);
+        var count = Math.Min(requested, maxUseful);
 
         _zoomThumbCts?.Cancel();
         _zoomThumbCts = new CancellationTokenSource();
