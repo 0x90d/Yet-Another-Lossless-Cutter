@@ -1301,6 +1301,11 @@ public partial class MainWindow : Window
         var path = _filePlaylist[_playlistIndex];
 
         _currentFile = path;
+        // Plain-wheel seek magnitude follows the same IAutoSeekRule override as the
+        // right-click auto-repeat — so a rule that says "this path uses 10s" also makes
+        // a normal scroll over the video/timeline step 10s. The jump buttons keep their
+        // own fixed Tag magnitude (JumpButton_Wheel), unaffected by this.
+        TimelineControl.WheelSeekStepSeconds = ResolveAutoSeekDefault();
         _extractorLoadedPath = null;
         UpdatePlaylistRemaining();
         FileLabel.Text = path;
@@ -1508,6 +1513,8 @@ public partial class MainWindow : Window
     {
         try { _player.Stop(); } catch { }
         _currentFile = null;
+        // No file loaded → wheel seek reverts to the core 60s default.
+        TimelineControl.WheelSeekStepSeconds = ResolveAutoSeekDefault();
         FileLabel.Text = "(no file)";
         FileSizeLabel.Text = string.Empty;
         if (PlaylistRemainingPill != null) PlaylistRemainingPill.IsVisible = false;
@@ -1589,12 +1596,17 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Wheel over the video area = default seek (60s by default, matches WPF).
+    /// Wheel over the video area = default seek. Magnitude is the IAutoSeekRule-resolved
+    /// step (60s unless a plugin overrides it for the current file) — see
+    /// <see cref="TimelineControl.WheelSeekStepSeconds"/>. Direction honours
+    /// <see cref="TimelineControl.WheelSeekInverted"/> so video-area and timeline
+    /// wheel-seeking agree on both step size and direction.
     /// </summary>
     private void VideoArea_Wheel(object? sender, PointerWheelEventArgs e)
     {
         StopAutoRepeat();
-        var delta = TimelineControl.WheelSeekStepSeconds * Math.Sign(e.Delta.Y);
+        var direction = TimelineControl.WheelSeekInverted ? -1 : 1;
+        var delta = TimelineControl.WheelSeekStepSeconds * Math.Sign(e.Delta.Y) * direction;
         if (delta == 0) return;
         Seek(delta);
         e.Handled = true;

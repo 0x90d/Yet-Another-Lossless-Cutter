@@ -82,7 +82,7 @@ public partial class HotkeyHelpDialog : Window
             ("Home / End", "Playhead to file start / end"),
             ("+ / −",      "Zoom in / out around playhead"),
             ("0",          "Zoom to fit (whole file)"),
-            ("Wheel",      "Seek ±60 s"),
+            ("Wheel",      "Seek by the auto-seek step (60 s, or a plugin override)"),
             ("Ctrl + Wheel",  "Zoom around cursor"),
             ("Shift + Wheel", "Pan timeline horizontally"),
             ("Middle-drag",   "Pan timeline"),

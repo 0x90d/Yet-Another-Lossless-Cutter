@@ -1142,7 +1142,9 @@ public class TimelineControl : Control
 
 
     /// <summary>Seconds the playhead moves per wheel notch in plain-wheel mode.
-    /// Default 60s matches the WPF original.</summary>
+    /// Defaults to 60s (matches the WPF original) but MainWindow re-points it at the
+    /// IAutoSeekRule-resolved magnitude on every file load, so a plugin override
+    /// applies to plain-wheel seeking as well as the right-click auto-repeat.</summary>
     public static double WheelSeekStepSeconds { get; set; } = 60.0;
 
     /// <summary>
@@ -1178,8 +1180,12 @@ public class TimelineControl : Control
         {
             // Plain wheel = seek (matches WPF original behavior).
             // Wheel up = forward in time, unless WheelSeekInverted is set.
+            // Sign(Delta.Y), not raw Delta.Y: one fixed step per notch regardless of
+            // wheel resolution — precision touchpads report fractional/large deltas
+            // that would otherwise make the seek size jump around. Matches the
+            // video-area wheel handler (MainWindow.VideoArea_Wheel).
             var direction = WheelSeekInverted ? -1.0 : 1.0;
-            var newPos = Math.Clamp(Position + direction * e.Delta.Y * WheelSeekStepSeconds, 0, Duration);
+            var newPos = Math.Clamp(Position + direction * Math.Sign(e.Delta.Y) * WheelSeekStepSeconds, 0, Duration);
             Position = newPos;
             RaiseTime(PositionDraggedEvent,newPos);
         }
