@@ -1346,6 +1346,12 @@ public partial class MainWindow : Window
     /// Refresh the "N left" pill above the file label. Hidden in single-file mode.
     /// "Left" counts files after the current one — at the last file, the counter
     /// reads 0 (the visible "0 left" is intentional, signaling end-of-playlist).
+    ///
+    /// When the playlist spans multiple folders (e.g. user dragged several
+    /// folders in or used "open folder + recurse"), also show how many of the
+    /// remaining files live in the *current file's* folder. Useful for
+    /// estimating "am I almost done with this folder?" without scrolling
+    /// the playlist.
     /// </summary>
     private void UpdatePlaylistRemaining()
     {
@@ -1356,7 +1362,25 @@ public partial class MainWindow : Window
             return;
         }
         var remaining = _filePlaylist.Count - _playlistIndex - 1;
-        PlaylistRemainingLabel.Text = $"{remaining} left";
+
+        var currentFolder = System.IO.Path.GetDirectoryName(_filePlaylist[_playlistIndex]);
+        var folderRemaining = 0;
+        for (var i = _playlistIndex + 1; i < _filePlaylist.Count; i++)
+        {
+            if (string.Equals(
+                    System.IO.Path.GetDirectoryName(_filePlaylist[i]),
+                    currentFolder,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                folderRemaining++;
+            }
+        }
+
+        // Only mention the folder-subset when it differs from the total —
+        // for a single-folder playlist the extra text would be redundant.
+        PlaylistRemainingLabel.Text = folderRemaining < remaining
+            ? $"{remaining} left · {folderRemaining} in folder"
+            : $"{remaining} left";
         PlaylistRemainingPill.IsVisible = true;
     }
 
