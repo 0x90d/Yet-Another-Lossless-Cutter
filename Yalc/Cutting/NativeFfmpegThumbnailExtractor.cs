@@ -420,9 +420,26 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        try { _gate.Wait(2000); } catch { }
+
+        // CRITICAL: only free the native contexts if we actually own the gate.
+        //
+        // Each extraction holds _gate for the full duration of its native decode. If
+        // one of those native calls is wedged — a stalled av_read_frame over a dropped
+        // network share is the usual culprit after a long session — the gate is held by
+        // a live thread that is still touching _fmtCtx/_codecCtx/_frame. Calling
+        // CloseInternal() in that state frees those pointers out from under the running
+        // decode, corrupting the native heap → 0xC0000005 in CloseInternal at shutdown.
+        //
+        // Wait() returns false on timeout; treat that as "someone else owns it" and
+        // leave the contexts alone. The process is exiting, so leaking them is harmless
+        // — the OS reclaims the memory. Freeing them is the dangerous option, not the
+        // safe one. Likewise only dispose the semaphore when we own it: a wedged thread
+        // may still call Release() later, and disposing it underneath would throw.
+        bool entered = false;
+        try { entered = _gate.Wait(2000); } catch { }
+        if (!entered) return;
         try { CloseInternal(); }
-        finally { try { _gate.Release(); } catch { } }
+        finally { _gate.Release(); }
         _gate.Dispose();
     }
 

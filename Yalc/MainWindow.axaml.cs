@@ -25,7 +25,10 @@ namespace YetAnotherLosslessCutter;
 public partial class MainWindow : Window
 {
     private readonly MpvPlayer _player = new();
-    private readonly NativeFfmpegThumbnailExtractor _extractor = new();
+    // NOT readonly: a wedged extractor (a native FFmpeg read stalled on a dropped
+    // network share) can't be un-stuck, so recovery swaps in a fresh instance —
+    // see RunExtractorOpAsync.
+    private NativeFfmpegThumbnailExtractor _extractor = new();
     private readonly ObservableCollection<VideoSegment> _queueSegments = new();
     private readonly System.Collections.Generic.List<string> _filePlaylist = new();
     private int _playlistIndex = -1;
@@ -85,6 +88,20 @@ public partial class MainWindow : Window
     private const int ThumbCountMin = 16;            // floor for tiny windows
     private const int ThumbCountMax = 80;            // ceiling to keep extraction time bounded
     private const int MaxZoomLayers = 8;             // LRU cap — keep N most recent zoom layers
+
+    // --- Thumbnail-extractor stall recovery ---
+    // The extractor serialises all native work behind one lock; a blocking native
+    // call (typically a read stalled on a dropped network share) holds that lock
+    // forever, and every later extraction silently no-ops. We can't interrupt the
+    // native call, so we detect the stall and swap in a fresh extractor instance.
+    private const int StallPollIntervalMs = 2_000;   // how often the watchdog re-checks progress
+    // No-progress window before we call it wedged. Generous on purpose: a single
+    // 4K frame decode (or avformat open + find_stream_info) over a slow share can
+    // legitimately take many seconds, and a false positive triggers a needless
+    // reopen. Only a run with ZERO progress for this long is treated as a stall.
+    private const int StallTimeoutMs = 30_000;
+    private const int MaxStallRetries = 2;           // reopen attempts before giving up
+    private const int StallRetryBackoffMs = 1_500;   // pause between reopen attempts
 
     public MainWindow()
     {
@@ -364,8 +381,127 @@ public partial class MainWindow : Window
     private async Task EnsureExtractorLoadedAsync(string path, CancellationToken ct)
     {
         if (_extractorLoadedPath == path) return;
-        await _extractor.LoadFileAsync(path, ct);
+        // Route the open through the stall watchdog too: avformat_open_input /
+        // find_stream_info is itself a blocking native call that can wedge on a
+        // dead share. On stall this swaps _extractor and throws ExtractorStalledException.
+        await RunExtractorOpAsync<bool>(
+            async (ex, _) => { await ex.LoadFileAsync(path, ct); return true; },
+            onProgress: null, ct);
         _extractorLoadedPath = path;
+    }
+
+    /// <summary>Thrown by <see cref="RunExtractorOpAsync{T}"/> when the extractor is
+    /// presumed wedged in a blocking native call. By the time it's thrown a fresh
+    /// extractor instance is already in <c>_extractor</c>; the caller's job is just to
+    /// retry (which reopens the file on the new instance).</summary>
+    private sealed class ExtractorStalledException : Exception { }
+
+    /// <summary>
+    /// Runs a single thumbnail-extractor operation under a no-progress stall watchdog.
+    ///
+    /// The extractor serialises all native work behind one lock; if a native call
+    /// wedges (a read stalled on a dropped network share is the usual culprit after a
+    /// long session) the lock is held forever and every later extraction silently
+    /// no-ops. We can't unblock the native call, so instead: every progress tick (for
+    /// ranged ops) resets a stall clock, and if the op makes no progress for
+    /// <see cref="StallTimeoutMs"/> while still running, we declare it wedged, swap
+    /// <c>_extractor</c> for a clean instance, and throw <see cref="ExtractorStalledException"/>
+    /// so the caller can retry on the fresh instance.
+    ///
+    /// The wedged instance is disposed once (if ever) its native call unblocks — a
+    /// continuation on the orphaned task. If it never unblocks, the contexts leak
+    /// harmlessly until the process exits; freeing them under the live native call is
+    /// what corrupts the heap (the 0xC0000005-on-close bug), so we don't.
+    ///
+    /// All awaits resume on the UI sync context, so the <c>_extractor</c> swap and the
+    /// progress-driven clock writes all happen on the UI thread — no field race.
+    /// </summary>
+    private async Task<T> RunExtractorOpAsync<T>(
+        Func<NativeFfmpegThumbnailExtractor, IProgress<double>?, Task<T>> start,
+        Action<double>? onProgress,
+        CancellationToken ct)
+    {
+        var extractor = _extractor;
+        var lastTick = Environment.TickCount64;
+        var abandoned = false;
+        // Forward real progress to the caller AND reset the stall clock. Once the op
+        // is abandoned (stall detected), stop forwarding so the orphan's late ticks
+        // can't clobber the retry's status text.
+        var progress = new Progress<double>(p =>
+        {
+            if (abandoned) return;
+            lastTick = Environment.TickCount64;
+            onProgress?.Invoke(p);
+        });
+
+        var opTask = start(extractor, progress);
+
+        using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        try
+        {
+            while (true)
+            {
+                var completed = await Task.WhenAny(opTask, Task.Delay(StallPollIntervalMs, pollCts.Token));
+                if (completed == opTask)
+                    return await opTask; // success — or re-throws a genuine op fault.
+
+                // Cancellation (user panned/zoomed to a new view) takes priority over
+                // stall detection: it's normal teardown, not a wedge — keep the extractor.
+                ct.ThrowIfCancellationRequested();
+
+                if (Environment.TickCount64 - lastTick < StallTimeoutMs)
+                    continue; // still progressing (or within the grace window) — keep waiting.
+
+                // Wedged: no progress for StallTimeoutMs and the op is still running.
+                abandoned = true;
+                if (ReferenceEquals(_extractor, extractor))
+                {
+                    _extractor = new NativeFfmpegThumbnailExtractor();
+                    _extractorLoadedPath = null;
+                }
+                // Reclaim the wedged instance if/when its native call finally errors out
+                // (a network read usually times out eventually). Off the UI thread —
+                // Dispose blocks on the lock the orphan still holds.
+                _ = opTask.ContinueWith(
+                    _ => { try { extractor.Dispose(); } catch { } },
+                    CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+                throw new ExtractorStalledException();
+            }
+        }
+        finally { pollCts.Cancel(); }
+    }
+
+    /// <summary>
+    /// Loads <paramref name="path"/> (if needed) and extracts a frame range, retrying
+    /// on extractor stalls by reopening on a fresh instance. Returns null when every
+    /// retry stalled (status already set to a "reload to retry" message) — distinct from
+    /// a thrown exception, which the callers surface as a thumbnail error.
+    /// </summary>
+    private async Task<FrameSet?> ExtractRangeWithRecoveryAsync(
+        string path, double startSec, double endSec, int count,
+        Action<double>? onProgress, CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await EnsureExtractorLoadedAsync(path, ct);
+                return await RunExtractorOpAsync(
+                    (ex, prog) => ex.ExtractRangeAsync(startSec, endSec, count, prog, ct),
+                    onProgress, ct);
+            }
+            catch (ExtractorStalledException)
+            {
+                if (attempt >= MaxStallRetries)
+                {
+                    SetThumbnailStatus("thumbnail extractor stalled — reload the file to retry");
+                    return null;
+                }
+                SetThumbnailStatus($"thumbnail extractor stalled — restarting ({attempt + 1}/{MaxStallRetries})…");
+                // Back off so a genuinely-dead share isn't hammered with reopens.
+                await Task.Delay(StallRetryBackoffMs, ct);
+            }
+        }
     }
 
     private void KickZoomDebounce()
@@ -765,18 +901,17 @@ public partial class MainWindow : Window
 
         try
         {
-            await EnsureExtractorLoadedAsync(path, ct);
-
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            // Progress<T>.Report posts asynchronously to the UI thread; the final 100%
-            // callback can land after SetStatus(null) and re-pin the message. Gate it.
+            // Progress callbacks post asynchronously to the UI thread; the final 100%
+            // callback can land after SetThumbnailStatus(null) and re-pin the message. Gate it.
             var done = false;
-            var progress = new Progress<double>(p => { if (!done) SetThumbnailStatus($"base thumbnails… {p:P0}"); });
             var baseCount = ComputeThumbCount(BaseLayerHeadroom);
-            var frames = await _extractor.ExtractRangeAsync(0, duration,
-                count: baseCount, progress: progress, ct: ct);
+            var frames = await ExtractRangeWithRecoveryAsync(path, 0, duration, baseCount,
+                onProgress: p => { if (!done) SetThumbnailStatus($"base thumbnails… {p:P0}"); },
+                ct: ct);
             done = true;
             sw.Stop();
+            if (frames == null) return; // every retry stalled — status already set.
             if (ct.IsCancellationRequested) return;
             // Identity guard: the file may have changed between the last cancellation
             // check and now. Don't paint frames from `path` onto a different file's timeline.
@@ -844,21 +979,20 @@ public partial class MainWindow : Window
 
         try
         {
-            await EnsureExtractorLoadedAsync(path, ct);
-
             SetThumbnailStatus($"zoom thumbs ({zoom:0.#}×, {count} frames)…");
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            // See base-thumbnail path: gate late Progress<T> callbacks so the final 100%
+            // See base-thumbnail path: gate late progress callbacks so the final 100%
             // report can't re-pin the status after we've cleared it.
             var done = false;
-            var progress = new Progress<double>(p =>
-            {
-                if (!done) SetThumbnailStatus($"zoom thumbs ({zoom:0.#}×, {count} frames)… {p:P0}");
-            });
-            var frames = await _extractor.ExtractRangeAsync(viewStart, viewEnd,
-                count: count, progress: progress, ct: ct);
+            var frames = await ExtractRangeWithRecoveryAsync(path, viewStart, viewEnd, count,
+                onProgress: p =>
+                {
+                    if (!done) SetThumbnailStatus($"zoom thumbs ({zoom:0.#}×, {count} frames)… {p:P0}");
+                },
+                ct: ct);
             done = true;
             sw.Stop();
+            if (frames == null) return; // every retry stalled — status already set.
             if (ct.IsCancellationRequested) return;
             // Identity guard: file may have changed mid-extraction (see GenerateThumbnailsAsync).
             if (_currentFile != path) return;
