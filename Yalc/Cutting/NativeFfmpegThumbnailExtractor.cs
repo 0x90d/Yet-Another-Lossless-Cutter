@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,6 +62,26 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
     private bool _disposed;
     private string? _loadedPath;
 
+    // Watchdog deadline (av_gettime_relative microseconds) consulted by the FFmpeg
+    // interrupt callback below. 0 = disarmed. Armed around each blocking native call
+    // (open, find_stream_info, seek, read) so a wedged operation over a flaky share
+    // or a pathological .ts seek aborts with AVERROR_EXIT instead of hanging the
+    // whole extraction forever. Native-allocated so the callback — which can fire on
+    // an FFmpeg I/O thread — reads a stable address that never moves under GC.
+    private readonly unsafe long* _deadlineUs;
+
+    // Per-blocking-call budgets. Open covers avformat_open_input + find_stream_info
+    // (legitimately probes for a while on a slow share); the per-frame budget covers
+    // one seek+decode. Both re-arm on every call, so a slow-but-progressing file
+    // never trips them — only a call that makes zero progress for the whole budget
+    // is aborted.
+    private const long OpenInterruptTimeoutUs = 30_000_000;
+    private const long FrameInterruptTimeoutUs = 15_000_000;
+    // Consecutive per-frame timeouts before we conclude the source is unreadable and
+    // stop the range early (returning whatever partial strip we already have) rather
+    // than spending the full frame budget on every remaining cell.
+    private const int MaxConsecutiveTimeouts = 3;
+
     public double SourceFps { get; private set; }
     public TimeSpan SourceDuration { get; private set; }
     public string? LoadedPath => _loadedPath;
@@ -68,6 +89,30 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
     static NativeFfmpegThumbnailExtractor()
     {
         NativeFfmpegLoader.Ensure();
+    }
+
+    public unsafe NativeFfmpegThumbnailExtractor()
+    {
+        _deadlineUs = (long*)NativeMemory.Alloc((nuint)sizeof(long));
+        *_deadlineUs = 0;
+    }
+
+    private unsafe void Arm(long timeoutUs) => *_deadlineUs = ffmpeg.av_gettime_relative() + timeoutUs;
+    private unsafe void Disarm() => *_deadlineUs = 0;
+
+    // Cooperative abort hook: FFmpeg polls this between I/O operations. Returning
+    // non-zero makes the in-flight open/seek/read bail out with AVERROR_EXIT. Kept
+    // trivial — a native clock read and a compare, no allocation or managed locks —
+    // because it can run on FFmpeg's own thread while it holds internal locks.
+    // [UnmanagedCallersOnly] is the AOT-clean way to hand a managed function to
+    // native code (no delegate marshalling, no reflection).
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static unsafe int InterruptCallback(void* opaque)
+    {
+        var deadline = (long*)opaque;
+        if (deadline == null) return 0;
+        var d = *deadline;
+        return d != 0 && ffmpeg.av_gettime_relative() > d ? 1 : 0;
     }
 
     public Task LoadFileAsync(string path, CancellationToken ct = default) => Task.Run(() =>
@@ -95,12 +140,26 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
     {
         CloseInternal();
 
-        AVFormatContext* fmt = null;
+        // Pre-allocate the context so the interrupt callback is attached BEFORE the
+        // open — avformat_open_input and find_stream_info both do blocking I/O that
+        // must be abortable on a wedged share. (open_input frees a user-supplied
+        // context on failure and nulls the pointer, so there's nothing to clean up
+        // in that path.)
+        AVFormatContext* fmt = ffmpeg.avformat_alloc_context();
+        if (fmt == null) throw new InvalidOperationException("avformat_alloc_context failed");
+        fmt->interrupt_callback.callback.Pointer =
+            (IntPtr)(delegate* unmanaged[Cdecl]<void*, int>)&InterruptCallback;
+        fmt->interrupt_callback.opaque = _deadlineUs;
+
+        Arm(OpenInterruptTimeoutUs);
         int err = ffmpeg.avformat_open_input(&fmt, path, null, null);
+        Disarm();
         if (err < 0) throw new InvalidOperationException("avformat_open_input: " + AvError(err));
         _fmtCtx = fmt;
 
+        Arm(OpenInterruptTimeoutUs);
         err = ffmpeg.avformat_find_stream_info(_fmtCtx, null);
+        Disarm();
         if (err < 0) throw new InvalidOperationException("avformat_find_stream_info: " + AvError(err));
 
         AVCodec* codec = null;
@@ -212,6 +271,20 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
 
         long targetPts = ComputeTargetPts(timeSec);
 
+        // Arm the interrupt watchdog for the whole seek+decode of this one frame. A
+        // pathological .ts seek or a wedged read now aborts with AVERROR_EXIT after
+        // the budget instead of hanging; ExtractRangeAsync skips that cell and moves
+        // on, so a single bad region no longer blanks (or freezes) the whole strip.
+        Arm(FrameInterruptTimeoutUs);
+        try
+        {
+            return ExtractFrameLocked(targetPts, ct);
+        }
+        finally { Disarm(); }
+    }
+
+    private unsafe Bitmap? ExtractFrameLocked(long targetPts, CancellationToken ct)
+    {
         // Three-tier seek: prefer the keyframe ≤ target (BACKWARD), fall back to
         // any frame ≤ target (ANY), and finally to the first keyframe ≥ target
         // (FORWARD via flags=0). FORWARD is the saver when the file has no
@@ -220,6 +293,7 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
         int err = ffmpeg.av_seek_frame(_fmtCtx, _videoStreamIndex, targetPts, ffmpeg.AVSEEK_FLAG_BACKWARD);
         if (err < 0) err = ffmpeg.av_seek_frame(_fmtCtx, _videoStreamIndex, targetPts, ffmpeg.AVSEEK_FLAG_ANY);
         if (err < 0) err = ffmpeg.av_seek_frame(_fmtCtx, _videoStreamIndex, targetPts, 0);
+        if (err == ffmpeg.AVERROR_EXIT) throw new TimeoutException();
         if (err < 0) return null;
 
         ffmpeg.avcodec_flush_buffers(_codecCtx);
@@ -257,6 +331,7 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
                     if (++badPackets > maxBadPackets) break;
                     continue;
                 }
+                if (readErr == ffmpeg.AVERROR_EXIT) throw new TimeoutException();
                 if (readErr < 0) throw new InvalidOperationException("av_read_frame: " + AvError(readErr));
                 if (_packet->stream_index == _videoStreamIndex) break;
             }
@@ -389,6 +464,7 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
         var bitmaps = new List<Bitmap>(count);
         var times = new List<double>(count);
 
+        var consecutiveTimeouts = 0;
         for (var i = 0; i < count; i++)
         {
             ct.ThrowIfCancellationRequested();
@@ -405,8 +481,18 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
                     bitmaps.Add(bmp);
                     times.Add(t);
                 }
+                consecutiveTimeouts = 0;
             }
             catch (OperationCanceledException) { throw; }
+            catch (TimeoutException)
+            {
+                // The interrupt watchdog aborted this frame's seek/read. Skip the
+                // cell and keep going — one bad region shouldn't cost the whole
+                // strip. But if the source keeps timing out, it's effectively
+                // unreadable: stop early and return the partial strip rather than
+                // grinding the full budget out of every remaining cell.
+                if (++consecutiveTimeouts >= MaxConsecutiveTimeouts) break;
+            }
             catch { /* unexpected — skip */ }
             progress?.Report((double)(i + 1) / count);
         }
@@ -416,7 +502,7 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
         return new FrameSet(bitmaps, times, startSec, endSec);
     }
 
-    public void Dispose()
+    public unsafe void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
@@ -437,10 +523,17 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
         // may still call Release() later, and disposing it underneath would throw.
         bool entered = false;
         try { entered = _gate.Wait(2000); } catch { }
+        // A wedged thread still owns the gate (and may still consult _deadlineUs via
+        // the interrupt callback): leave the contexts AND the deadline block alone.
+        // The process is exiting, so leaking a few bytes is the safe choice — freeing
+        // out from under the live native call is the dangerous one.
         if (!entered) return;
         try { CloseInternal(); }
         finally { _gate.Release(); }
         _gate.Dispose();
+        // Freed only after CloseInternal tore down _fmtCtx, so no callback can still
+        // reference it. Not touched by CloseInternal itself — reload reuses the block.
+        NativeMemory.Free(_deadlineUs);
     }
 
     private unsafe void CloseInternal()
