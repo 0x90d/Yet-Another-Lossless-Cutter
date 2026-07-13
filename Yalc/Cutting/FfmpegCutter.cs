@@ -154,6 +154,14 @@ public sealed class FfmpegCutter
         if (_settings.IncludeAllStreams)
         {
             args.Add("-map"); args.Add("0");
+            // Drop data streams. Cameras and NLEs (DaVinci, GoPro) attach tmcd timecode
+            // or telemetry tracks whose codec ffmpeg reports as `none`; mp4 then fails
+            // with "Could not find tag for codec none" → "Could not write header".
+            // -ignore_unknown doesn't catch these (the stream *type* is known, only the
+            // codec isn't) and -copy_unknown still hits the muxer tag lookup. The `?`
+            // makes the negative map a no-op when the source has no data streams.
+            // The mp4 muxer still emits its own tmcd track from the timecode metadata.
+            args.Add("-map"); args.Add("-0:d?");
         }
 
         args.Add("-map_metadata"); args.Add("0");
