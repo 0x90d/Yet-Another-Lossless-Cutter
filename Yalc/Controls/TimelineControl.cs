@@ -275,11 +275,25 @@ public class TimelineControl : Control
         remove => RemoveHandler(SegmentEditedEvent, value);
     }
 
-    private void RaiseTime(RoutedEvent<TimelineTimeEventArgs> ev, double time) =>
-        RaiseEvent(new TimelineTimeEventArgs(ev, this, time));
+    private void RaiseTime(RoutedEvent<TimelineTimeEventArgs> ev, double time,
+        bool isPreview = false) =>
+        RaiseEvent(new TimelineTimeEventArgs(ev, this, time, isPreview));
 
     private enum DragMode { None, Playhead, SegmentStart, SegmentEnd, SegmentBody }
     private DragMode _drag = DragMode.None;
+    // Set once the playhead actually moves during a drag. Gates the final exact seek
+    // on release — a click that never moved already got one from OnPointerPressed.
+    private bool _playheadDragMoved;
+
+    /// <summary>
+    /// True while the user is dragging the playhead. Hosts must not write
+    /// <see cref="Position"/> while this is set: the drag owns the playhead, and
+    /// preview ticks are served with keyframe seeks, so the player reports back a
+    /// snapped time that can sit a whole GOP away from the pointer. Echoing it would
+    /// yank the playhead backwards mid-drag and make the release seek land on the
+    /// snapped time instead of where the user actually dropped it.
+    /// </summary>
+    public bool IsScrubbing => _drag == DragMode.Playhead;
     private VideoSegment? _dragSegment;
     private double _dragGrabOffset;
     // Captured on drag-start so we can emit a single SegmentEdited event with the
@@ -934,6 +948,7 @@ public class TimelineControl : Control
 
         // Empty area — drag to scrub the playhead.
         _drag = DragMode.Playhead;
+        _playheadDragMoved = false;
         e.Pointer.Capture(this);
     }
 
@@ -1073,7 +1088,10 @@ public class TimelineControl : Control
         {
             case DragMode.Playhead:
                 Position = t;
-                RaiseTime(PositionDraggedEvent,t);
+                _playheadDragMoved = true;
+                // Preview tick — host serves this with a keyframe seek so scrubbing
+                // stays responsive. OnPointerReleased lands the exact frame.
+                RaiseTime(PositionDraggedEvent, t, isPreview: true);
                 break;
             case DragMode.SegmentStart when _dragSegment != null:
             {
@@ -1109,16 +1127,23 @@ public class TimelineControl : Control
             var endedDrag = _drag == DragMode.SegmentBody
                 || _drag == DragMode.SegmentStart
                 || _drag == DragMode.SegmentEnd;
+            // The playhead drag fed the host cheap keyframe seeks while in flight;
+            // now that the position is final, ask for the frame-exact one.
+            var endedPlayheadDrag = _drag == DragMode.Playhead && _playheadDragMoved;
             var seg = _dragSegment;
             var oldFrom = _dragOldFrom;
             var oldTo = _dragOldTo;
 
             _drag = DragMode.None;
             _dragSegment = null;
+            _playheadDragMoved = false;
             _isPanning = false;
             _isMinimapDragging = false;
             Cursor = null;
             e.Pointer.Capture(null);
+
+            if (endedPlayheadDrag)
+                RaiseTime(PositionDraggedEvent, Position);
 
             if (endedDrag && seg != null
                 && (Math.Abs(seg.CutFromSeconds - oldFrom) > 1e-6

@@ -11,10 +11,22 @@ public sealed class TimelineTimeEventArgs : RoutedEventArgs
 {
     public double Time { get; }
 
-    public TimelineTimeEventArgs(RoutedEvent routedEvent, object source, double time)
+    /// <summary>
+    /// True for the intermediate ticks of a playhead drag, false for the settled
+    /// position (drag release, click, wheel, Home/End). Hosts should serve preview
+    /// ticks with a cheap keyframe seek and only pay for a frame-exact seek once
+    /// the value is final: an exact seek decodes every frame from the preceding
+    /// keyframe to the target, which on a long-GOP file is ~half a GOP of decode
+    /// per tick and backlogs badly when fired at pointer-move rate.
+    /// </summary>
+    public bool IsPreview { get; }
+
+    public TimelineTimeEventArgs(RoutedEvent routedEvent, object source, double time,
+        bool isPreview = false)
         : base(routedEvent, source)
     {
         Time = time;
+        IsPreview = isPreview;
     }
 }
 

@@ -209,8 +209,12 @@ public partial class MainWindow : Window
         });
         _player.TimePosChanged += t => Dispatcher.UIThread.Post(() =>
         {
-            // Update playhead — but don't fight a drag.
-            Timeline.Position = Math.Clamp(t, 0, _duration > 0 ? _duration : 0);
+            // Update playhead — but don't fight a drag. While scrubbing, the drag owns
+            // the playhead and mpv is reporting keyframe-snapped preview positions;
+            // echoing those would drag the playhead back to the keyframe under the
+            // user's cursor. The label still tracks so they can see what mpv is showing.
+            if (!Timeline.IsScrubbing)
+                Timeline.Position = Math.Clamp(t, 0, _duration > 0 ? _duration : 0);
             PositionLabel.Text = FormatTime(t);
 
             // A-B loop. The natural-progression check lives on VideoSegment so it can
@@ -295,7 +299,11 @@ public partial class MainWindow : Window
             // (user sees no frame). Back off ~50ms whenever any path lands at/past the
             // end — covers End key, drag-to-edge, programmatic seeks alike.
             if (_duration > 0 && t >= _duration - 0.001) t = Math.Max(0, _duration - 0.05);
-            _player.SeekAbsolute(t, exact: true);
+            // Mid-drag ticks get a keyframe seek; the settled position gets the exact
+            // frame. An exact seek decodes every frame from the preceding keyframe to
+            // the target, so on a long-GOP file (e.g. 8K HEVC with a 250-frame GOP)
+            // each tick costs most of a second and dragging builds a seek backlog.
+            _player.SeekAbsolute(t, exact: !e.IsPreview);
         };
 
         // Mirror segment-list selection onto the timeline so the selected band gets a
