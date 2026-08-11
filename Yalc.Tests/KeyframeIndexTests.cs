@@ -175,4 +175,35 @@ public class KeyframeIndexTests
         Assert.Equal(0, idx.Count);
         Assert.Null(idx.NextAfter(0.0));
     }
+
+    // ---- Window coverage ----
+    //
+    // The index only holds a scanned window of the file, so callers must ask Covers()
+    // before trusting a null from NextAfter/PrevBefore: inside the window null means
+    // "no keyframe there", outside it means "never looked".
+
+    [Fact]
+    public void Covers_EmptyIndex_IsFalse()
+    {
+        Assert.False(new KeyframeIndex().Covers(5.0));
+    }
+
+    [Fact]
+    public void Covers_ClearedIndex_IsFalse()
+    {
+        var idx = BuildIndex(1, 2, 3);
+        idx.Clear();
+        Assert.False(idx.Covers(2.0));
+    }
+
+    [Fact]
+    public void Covers_LoadedArray_CoversEverything()
+    {
+        // Load() is the "whole file is known" path (tests, future on-disk cache), so
+        // it must not report gaps outside the supplied timestamps.
+        var idx = BuildIndex(10, 20, 30);
+        Assert.True(idx.Covers(0.0));
+        Assert.True(idx.Covers(25.0));
+        Assert.True(idx.Covers(9999.0));
+    }
 }

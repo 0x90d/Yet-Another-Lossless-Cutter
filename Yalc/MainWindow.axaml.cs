@@ -45,11 +45,16 @@ public partial class MainWindow : Window
     // In-memory undo / redo for segment mutations. Cleared on file change.
     private readonly Undo.UndoStack _undo = new();
 
-    // Precise keyframe timestamps (ffprobe-extracted, populated in background after
-    // file load). When loaded, Alt+←/→ use these for exact keyframe navigation;
-    // while loading, fall back to mpv's approximate seek+keyframes.
+    // Precise keyframe timestamps (ffprobe-extracted) for a window around the playhead,
+    // scanned on demand rather than at file load. When the window covers the playhead,
+    // Alt+←/→ use these for exact keyframe navigation; outside it they fall back to
+    // mpv's approximate seek+keyframes and trigger a fresh scan.
     private readonly Navigation.KeyframeIndex _keyframes = new();
     private CancellationTokenSource? _keyframeIndexCts;
+    // Center of the in-flight keyframe window scan, NaN when none is running. Held so
+    // a held-down Alt+←/→ doesn't cancel and restart the scan on every repeat and
+    // therefore never finish one.
+    private double _keyframeScanCenter = double.NaN;
 
     // Action-id → handler routing for keyboard shortcuts. Catalog defaults are
     // overlaid with user overrides from Settings.HotkeyBindings so keys can be
@@ -243,21 +248,15 @@ public partial class MainWindow : Window
             _lastReportedPos = 0;
             _undo.Clear();
 
-            // Drop any stale keyframe index and start a fresh ffprobe scan in the
-            // background. Alt+←/→ falls back to approximate mode while it runs.
+            // Drop any stale keyframe window. Deliberately no scan here: ffprobe can't
+            // enumerate an index without reading media data, so indexing a whole file
+            // costs one full read of the source — ~13 min for a 46 GB file over SMB,
+            // saturating the link while mpv is trying to seek through the same file.
+            // The only consumer is Alt+←/→, which never looks far from the playhead,
+            // so the first press scans a window on demand instead.
             _keyframeIndexCts?.Cancel();
+            _keyframeScanCenter = double.NaN;
             _keyframes.Clear();
-            if (!string.IsNullOrEmpty(_currentFile))
-            {
-                var cts = new CancellationTokenSource();
-                _keyframeIndexCts = cts;
-                var path = _currentFile;
-                _ = Task.Run(async () =>
-                {
-                    try { await _keyframes.LoadAsync(path, cts.Token); }
-                    catch { /* ffprobe missing or scan failed — Alt+←/→ stays approximate */ }
-                }, cts.Token);
-            }
             // Surface any chapter markers the file ships with. Most stream-recorder
             // .ts files have none; mainstream MKV/MP4s usually do.
             Timeline.Markers.Clear();
@@ -2747,22 +2746,60 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Step to the previous or next keyframe. Uses the precise ffprobe-extracted
-    /// index when it's loaded; otherwise falls back to mpv's approximate
-    /// seek-with-keyframes mode (which can stick on long-GOP files).
+    /// window when it covers the playhead; otherwise falls back to mpv's approximate
+    /// seek-with-keyframes mode (which can stick on long-GOP files) and scans a fresh
+    /// window in the background so the next press is precise.
     /// </summary>
     private void StepToKeyframe(bool forward)
     {
         if (!_player.IsInitialized) return;
-        if (_keyframes.IsLoaded)
+        var pos = _player.TimePos;
+        if (_keyframes.Covers(pos))
         {
-            var t = forward ? _keyframes.NextAfter(_player.TimePos)
-                            : _keyframes.PrevBefore(_player.TimePos);
-            if (t.HasValue) _player.SeekAbsolute(t.Value, exact: true);
+            var t = forward ? _keyframes.NextAfter(pos) : _keyframes.PrevBefore(pos);
+            if (t.HasValue)
+            {
+                _player.SeekAbsolute(t.Value, exact: true);
+                return;
+            }
+            // Covered, but the neighbouring keyframe is past the window edge — the
+            // user has stepped out of the scanned region. Fall through to re-scan.
         }
-        else
+        _player.SeekKeyframeRelative(forward ? 1.0 : -1.0);
+        EnsureKeyframeWindow(pos);
+    }
+
+    /// <summary>
+    /// Kick off a background keyframe scan centered on <paramref name="center"/>, unless one
+    /// is already in flight for roughly the same region. Failures stay quiet — Alt+←/→
+    /// just remains approximate.
+    /// </summary>
+    private void EnsureKeyframeWindow(double center)
+    {
+        if (string.IsNullOrEmpty(_currentFile)) return;
+        if (!double.IsNaN(_keyframeScanCenter)
+            && Math.Abs(center - _keyframeScanCenter) < Navigation.KeyframeIndex.WindowRadiusSeconds)
+            return;
+
+        _keyframeIndexCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _keyframeIndexCts = cts;
+        _keyframeScanCenter = center;
+        var path = _currentFile;
+        // No token on Task.Run: a pre-start cancellation would skip the body and leave
+        // _keyframeScanCenter latched, blocking every later scan.
+        _ = Task.Run(async () =>
         {
-            _player.SeekKeyframeRelative(forward ? 1.0 : -1.0);
-        }
+            try { await _keyframes.LoadWindowAsync(path, center, cts.Token); }
+            catch { /* ffprobe missing or scan failed — Alt+←/→ stays approximate */ }
+            finally
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (_keyframeIndexCts == cts) _keyframeScanCenter = double.NaN;
+                });
+            }
+        });
     }
 
     /// <summary>
