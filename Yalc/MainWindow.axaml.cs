@@ -1085,13 +1085,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Snapshot queued sources on the UI thread; the scan below runs on a worker.
+        var queued = new HashSet<string>(
+            _queueSegments.Select(s => s.SourceFile), StringComparer.OrdinalIgnoreCase);
+
         SetStatus("scanning folder…");
         List<string> files;
+        int skippedQueued;
         try
         {
             // Enumeration + sort can be slow on large recursive folders;
             // run it on a worker so the UI stays responsive.
-            files = await Task.Run(() => EnumerateFolderFiles(result));
+            (files, skippedQueued) = await Task.Run(() => EnumerateFolderFiles(result, queued));
         }
         catch (Exception ex)
         {
@@ -1099,9 +1104,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        var skippedNote = skippedQueued > 0 ? $" ({skippedQueued} already in queue, skipped)" : "";
         if (files.Count == 0)
         {
-            SetStatus("open from folder: no matching files");
+            SetStatus("open from folder: no matching files" + skippedNote);
             return;
         }
 
@@ -1109,12 +1115,14 @@ public partial class MainWindow : Window
         _filePlaylist.AddRange(files);
         _playlistIndex = 0;
         LoadCurrentPlaylistItem();
-        SetStatus($"loaded {files.Count} file(s) from folder");
+        SetStatus($"loaded {files.Count} file(s) from folder" + skippedNote);
     }
 
-    private static List<string> EnumerateFolderFiles(OpenFromFolderViewModel vm)
+    private static (List<string> Files, int SkippedQueued) EnumerateFolderFiles(
+        OpenFromFolderViewModel vm, HashSet<string> queued)
     {
         var now = DateTime.UtcNow;
+        var skippedQueued = 0;
         var enumOpts = new EnumerationOptions
         {
             IgnoreInaccessible = true,
@@ -1134,6 +1142,8 @@ public partial class MainWindow : Window
             // Skip files created in the last 6 hours so we don't pick up captures
             // that are still being written. Matches the WPF original's guard.
             if (f.CreationTimeUtc.AddHours(6) > now) return false;
+            // Already queued for cutting — don't serve it up again.
+            if (queued.Contains(f.FullName)) { skippedQueued++; return false; }
             return true;
         }
 
@@ -1166,7 +1176,7 @@ public partial class MainWindow : Window
         foreach (var filter in PluginHost.Get<IFilePickerFilter>())
             view = filter.Apply(view, pickerCtx);
 
-        return view as List<string> ?? view.ToList();
+        return (view as List<string> ?? view.ToList(), skippedQueued);
     }
 
     private async Task TryRecoverLastFileAsync()
