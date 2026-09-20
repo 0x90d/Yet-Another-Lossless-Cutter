@@ -33,7 +33,19 @@ class Program
         // window starts querying for contributions. See PluginLoader for the why.
         PluginLoader.LoadAll();
 
+        // Hand plugins the resolved tool paths so they don't each re-implement the
+        // app-dir / app-bin / PATH lookup. A first-run native-deps install restarts
+        // the app, so there's no in-session path to re-publish for.
+        PublishToolPaths();
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
+
+    /// <summary>Copy the resolved ffmpeg/ffprobe paths into <see cref="PluginHost"/>.</summary>
+    public static void PublishToolPaths()
+    {
+        PluginHost.FfmpegPath = Cutting.FfmpegLocator.FfmpegPath;
+        PluginHost.FfprobePath = Cutting.FfmpegLocator.FfprobePath;
     }
 
     private static void LogFatal(string source, Exception? ex)

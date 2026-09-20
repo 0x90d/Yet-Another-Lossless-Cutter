@@ -64,6 +64,15 @@ public partial class MainWindow : Window
     // Active silence-detection scan. Click-while-running cancels.
     private CancellationTokenSource? _silenceCts;
 
+    // In-flight plugin detector scans, keyed by detector. Click-while-running cancels,
+    // and so does loading another file — a scan's results only mean anything for the
+    // file it started on.
+    private readonly Dictionary<ISegmentDetector, CancellationTokenSource> _detectorScans = new();
+
+    // File whose cached detector segments have already been applied, so a second
+    // DurationChanged / FileLoaded round for the same file doesn't re-add them.
+    private string? _cachedSegmentsAppliedFor;
+
     // Snapshot of the segment being edited via an inline time TextBox. Set on
     // GotFocus, used on LostFocus to push a single ChangeSegmentTimesAction per
     // edit. Whole-segment snapshot (both bounds) so the action restores the
@@ -131,6 +140,8 @@ public partial class MainWindow : Window
             if (e.PropertyName is null || e.PropertyName.StartsWith("Show", StringComparison.Ordinal))
                 Dispatcher.UIThread.Post(ApplyUiVisibility);
         };
+        BuildPluginDetectorButtons();
+        BuildPluginToolbarCommands();
         RegisterHotkeyHandlers();
         _hotkeys.ApplyBindings(Settings.Instance.HotkeyBindings);
         Settings.Instance.HotkeyBindingsChanged += () =>
@@ -269,6 +280,9 @@ public partial class MainWindow : Window
                 SetThumbnailStatus("loaded — generating thumbnails…");
             if (_currentFile != null)
             {
+                // Before the (slow) thumbnail pass, so a file a plugin already scanned
+                // shows its segments as soon as it opens.
+                await ApplyCachedDetectorSegmentsAsync(_currentFile);
                 // Waveform runs in parallel — independent ffmpeg pipe, no shared state
                 // with the thumbnail extractor. Fire-and-forget; failures stay quiet.
                 _ = GenerateWaveformAsync(_currentFile);
@@ -1317,7 +1331,13 @@ public partial class MainWindow : Window
         if (_playlistIndex < 0 || _playlistIndex >= _filePlaylist.Count) return;
         var path = _filePlaylist[_playlistIndex];
 
+        // Any scan still running was started for the previous file.
+        CancelDetections();
+
         _currentFile = path;
+        _cachedSegmentsAppliedFor = null;
+        foreach (var observer in PluginHost.Get<ICurrentFileObserver>())
+            observer.OnCurrentFileChanged(path);
         // Plain-wheel seek magnitude follows the same IAutoSeekRule override as the
         // right-click auto-repeat — so a rule that says "this path uses 10s" also makes
         // a normal scroll over the video/timeline step 10s. The jump buttons keep their
@@ -1553,7 +1573,11 @@ public partial class MainWindow : Window
     private void ReleaseCurrentFile()
     {
         try { _player.Stop(); } catch { }
+        CancelDetections();
         _currentFile = null;
+        _cachedSegmentsAppliedFor = null;
+        foreach (var observer in PluginHost.Get<ICurrentFileObserver>())
+            observer.OnCurrentFileChanged(null);
         // No file loaded → wheel seek reverts to the core 60s default.
         TimelineControl.WheelSeekStepSeconds = ResolveAutoSeekDefault();
         FileLabel.Text = "(no file)";
@@ -2547,16 +2571,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (Timeline.Segments.Count > 0 && Settings.Instance.ShowConfirmationPrompts)
-        {
-            var ok = await ConfirmDialog.ShowAsync(this, "Detect silence",
-                $"Replace the existing {Timeline.Segments.Count} segment(s) with auto-detected ones?\n\n" +
-                $"Threshold: {Settings.Instance.SilenceThresholdDb} dB · " +
-                $"min silence: {Settings.Instance.SilenceMinDurationSeconds}s.\n" +
-                "(Adjustable in Settings. Ctrl+Z to undo.)");
-            if (!ok) return;
-        }
+        var ok = await ConfirmReplaceSegmentsAsync("Detect silence",
+            $"Threshold: {Settings.Instance.SilenceThresholdDb} dB · " +
+            $"min silence: {Settings.Instance.SilenceMinDurationSeconds}s.\n" +
+            "(Adjustable in Settings. Ctrl+Z to undo.)");
+        if (!ok) return;
+        // The confirmation is awaited, so re-check that we're still on the same file.
+        if (string.IsNullOrEmpty(_currentFile)) return;
 
+        var file = _currentFile;
         var settings = Settings.Instance;
         var detector = new Detectors.SilenceDetector();
         var cts = new CancellationTokenSource();
@@ -2577,7 +2600,7 @@ public partial class MainWindow : Window
                 settings.SilenceMinDurationPercentOfDuration / 100.0 * _duration);
 
             var silences = await detector.DetectAsync(
-                _currentFile,
+                file,
                 settings.SilenceThresholdDb,
                 minSilence,
                 _duration,
@@ -2599,35 +2622,12 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // Build the composite: clear any existing segments first, then add the
-            // detected ones. Single Ctrl+Z reverses the whole replace.
-            var actions = new List<Undo.IUndoAction>();
-            if (Timeline.Segments.Count > 0)
-            {
-                var snapshot = Timeline.Segments.ToArray();
-                foreach (var s in snapshot) s.MarkedForDeletion = true;
-                Timeline.Segments.Clear();
-                actions.Add(new Undo.ClearAllSegmentsAction(Timeline.Segments, snapshot));
-            }
-
-            foreach (var (from, to) in speech)
-            {
-                var seg = new VideoSegment
-                {
-                    SourceFile = _currentFile,
-                    MaxDuration = TimeSpan.FromSeconds(_duration),
-                    CutFrom = TimeSpan.FromSeconds(from),
-                    CutTo = TimeSpan.FromSeconds(to),
-                    ColorIndex = SegmentPalette.PickUnusedIndex(Timeline.Segments.Select(s => s.ColorIndex)),
-                };
-                Timeline.Segments.Add(seg);
-                actions.Add(new Undo.AddSegmentAction(
-                    Timeline.Segments, seg, Timeline.Segments.Count - 1));
-                _ = LoadThumbnailAsync(seg);
-            }
-
-            _undo.Push(new Undo.CompositeAction("detect silence", actions.ToArray()));
-            SetStatus($"silence scan: {silences.Count} silence(s) → {speech.Count} segment(s) (Ctrl+Z to undo)");
+            // Clear any existing segments, then add the detected ones — a single
+            // Ctrl+Z reverses the whole replace.
+            var ranges = speech.Select(s => new DetectedSegment(s.FromSeconds, s.ToSeconds)).ToList();
+            SetStatus(ReplaceSegmentsWithDetected(file, ranges, "detect silence")
+                ? $"silence scan: {silences.Count} silence(s) → {speech.Count} segment(s) (Ctrl+Z to undo)"
+                : "silence scan: file changed during the scan — result discarded");
         }
         catch (OperationCanceledException)
         {
@@ -2642,6 +2642,205 @@ public partial class MainWindow : Window
             _silenceCts = null;
             DetectSilenceButton.Content = "↓ silence";
         }
+    }
+
+    // --- Plugin segment detectors ---
+
+    /// <summary>
+    /// One button per registered <see cref="ISegmentDetector"/>, sitting after the
+    /// built-in "↓ silence" button and inheriting the action row's button styling.
+    /// </summary>
+    private void BuildPluginDetectorButtons()
+    {
+        foreach (var detector in PluginHost.Get<ISegmentDetector>())
+        {
+            var button = new Button { Content = detector.ButtonLabel };
+            ToolTip.SetTip(button, detector.ToolTip);
+            button.Click += async (_, _) =>
+            {
+                StopAutoRepeat();
+                await RunPluginDetectorAsync(detector, button);
+            };
+            PluginDetectorButtons.Children.Add(button);
+        }
+        PluginDetectorButtons.IsVisible = PluginDetectorButtons.Children.Count > 0;
+    }
+
+    /// <summary>
+    /// One button per registered <see cref="IToolbarCommand"/>, next to "Open folder…".
+    /// For plugin actions that aren't about the file currently open.
+    /// </summary>
+    private void BuildPluginToolbarCommands()
+    {
+        foreach (var command in PluginHost.Get<IToolbarCommand>())
+        {
+            var button = new Button { Content = command.Label };
+            ToolTip.SetTip(button, command.ToolTip);
+            button.Click += (_, _) =>
+            {
+                try
+                {
+                    command.Execute();
+                }
+                catch (Exception ex)
+                {
+                    SetStatus($"{command.Label} failed: {ex.Message}");
+                }
+            };
+            PluginToolbarCommands.Children.Add(button);
+        }
+        PluginToolbarCommands.IsVisible = PluginToolbarCommands.Children.Count > 0;
+    }
+
+    /// <summary>
+    /// Run one plugin detector over the current file, replacing the timeline's segments
+    /// with what it finds. Click-while-running cancels, same as the silence button.
+    /// </summary>
+    private async Task RunPluginDetectorAsync(ISegmentDetector detector, Button button)
+    {
+        if (_detectorScans.TryGetValue(detector, out var running))
+        {
+            running.Cancel();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_currentFile) || _duration <= 0)
+        {
+            SetStatus($"no file loaded — cannot run {detector.ButtonLabel}");
+            return;
+        }
+        if (!await ConfirmReplaceSegmentsAsync(detector.ButtonLabel, "(Ctrl+Z to undo.)")) return;
+        // The confirmation is awaited, so re-check that we're still on the same file.
+        if (string.IsNullOrEmpty(_currentFile)) return;
+
+        var file = _currentFile;
+        var cts = new CancellationTokenSource();
+        _detectorScans[detector] = cts;
+        button.Content = "✕ cancel";
+        try
+        {
+            var ctx = new SegmentDetectorContext { SourceFile = file, DurationSeconds = _duration };
+            // Guarded so a progress report that lands after the scan finished can't
+            // overwrite the final summary in the status bar.
+            var status = new Progress<string>(msg =>
+            {
+                if (_detectorScans.ContainsKey(detector)) SetStatus(msg);
+            });
+            var result = await detector.DetectAsync(ctx, status, cts.Token);
+
+            if (result.Segments.Count == 0)
+            {
+                SetStatus(result.Summary);
+                return;
+            }
+            var applied = ReplaceSegmentsWithDetected(file, result.Segments, detector.ButtonLabel);
+            SetStatus(applied
+                ? $"{result.Summary} (Ctrl+Z to undo)"
+                : $"{detector.ButtonLabel}: file changed during the scan — result discarded");
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus($"{detector.ButtonLabel}: cancelled");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"{detector.ButtonLabel} failed: {ex.Message}");
+        }
+        finally
+        {
+            _detectorScans.Remove(detector);
+            cts.Dispose();
+            button.Content = detector.ButtonLabel;
+        }
+    }
+
+    /// <summary>
+    /// Apply segments a detector already knows for a freshly-loaded file (from an
+    /// earlier batch scan). Waits briefly for mpv to report the duration — segments
+    /// need it to clamp their bounds — and gives up quietly if it never arrives.
+    /// </summary>
+    private async Task ApplyCachedDetectorSegmentsAsync(string file)
+    {
+        var detectors = PluginHost.Get<ISegmentDetector>();
+        if (detectors.Count == 0 || _cachedSegmentsAppliedFor == file) return;
+
+        var cached = new List<DetectedSegment>();
+        foreach (var detector in detectors)
+        {
+            var result = detector.GetCachedSegments(file);
+            if (result != null) cached.AddRange(result.Segments);
+        }
+        if (cached.Count == 0) return;
+
+        // Same duration-availability wait as the waveform / thumbnail passes.
+        for (var i = 0; i < 20 && _duration <= 0; i++) await Task.Delay(50);
+        if (_duration <= 0 || _currentFile != file) return;
+
+        if (ReplaceSegmentsWithDetected(file, cached, "cached scan"))
+        {
+            _cachedSegmentsAppliedFor = file;
+            SetStatus($"{cached.Count} segment(s) from an earlier scan (Ctrl+Z to undo)");
+        }
+    }
+
+    /// <summary>
+    /// Ask before throwing away the segments already on the timeline. No prompt when
+    /// there's nothing to lose, or when confirmations are switched off in Settings.
+    /// </summary>
+    private async Task<bool> ConfirmReplaceSegmentsAsync(string title, string detail)
+    {
+        if (Timeline.Segments.Count == 0 || !Settings.Instance.ShowConfirmationPrompts) return true;
+        return await ConfirmDialog.ShowAsync(this, title,
+            $"Replace the existing {Timeline.Segments.Count} segment(s) with auto-detected ones?\n\n{detail}");
+    }
+
+    /// <summary>
+    /// Swap the timeline's segments for detected ranges as a single undo step. Returns
+    /// false without touching anything when the user has moved on to another file since
+    /// the scan started — those ranges describe a file that's no longer open.
+    /// </summary>
+    private bool ReplaceSegmentsWithDetected(
+        string sourceFile, IReadOnlyList<DetectedSegment> ranges, string undoLabel)
+    {
+        if (!string.Equals(_currentFile, sourceFile, StringComparison.OrdinalIgnoreCase)) return false;
+
+        var actions = new List<Undo.IUndoAction>();
+        if (Timeline.Segments.Count > 0)
+        {
+            var snapshot = Timeline.Segments.ToArray();
+            foreach (var s in snapshot) s.MarkedForDeletion = true;
+            Timeline.Segments.Clear();
+            actions.Add(new Undo.ClearAllSegmentsAction(Timeline.Segments, snapshot));
+        }
+
+        foreach (var (from, to) in ranges)
+        {
+            var seg = new VideoSegment
+            {
+                SourceFile = sourceFile,
+                MaxDuration = TimeSpan.FromSeconds(_duration),
+                CutFrom = TimeSpan.FromSeconds(from),
+                CutTo = TimeSpan.FromSeconds(to),
+                ColorIndex = SegmentPalette.PickUnusedIndex(Timeline.Segments.Select(s => s.ColorIndex)),
+            };
+            Timeline.Segments.Add(seg);
+            actions.Add(new Undo.AddSegmentAction(
+                Timeline.Segments, seg, Timeline.Segments.Count - 1));
+            _ = LoadThumbnailAsync(seg);
+        }
+
+        _undo.Push(new Undo.CompositeAction(undoLabel, actions.ToArray()));
+        return true;
+    }
+
+    /// <summary>
+    /// Stop every running scan. A detection describes the file it started on, so
+    /// loading a different one makes any in-flight scan pointless.
+    /// </summary>
+    private void CancelDetections()
+    {
+        _silenceCts?.Cancel();
+        foreach (var cts in _detectorScans.Values) cts.Cancel();
     }
 
     private void AddSegmentInternal(double startSec, double endSec)

@@ -74,10 +74,23 @@ All in the `YetAnotherLosslessCutter.Plugins` namespace
 (`Yalc.Plugins.Abstractions` project):
 
 - **`IOutputPathPlugin`** — transform the output directory per cut.
+- **`IOutputTokenPlugin`** — add tokens to the output filename template.
 - **`ISettingsContribution`** — add a card to the Settings window.
 - **`IStatusBadgeProvider`** — add pills to the main-window status bar.
   Call `PluginHost.NotifyBadgesChanged()` when your state flips.
 - **`IFilePickerFilter`** — post-process the "Open from folder" file list.
+- **`IAutoSeekRule`** — override the right-click auto-seek magnitude per path.
+- **`ISegmentDetector`** — add a button to the action row that scans the loaded file and
+  returns segments, like the built-in "↓ silence". The host handles the confirm-replace,
+  the single-undo-step, cancel-on-second-click and cancel-on-file-change. Implement
+  `GetCachedSegments` too and a file you already scanned opens with its segments in place.
+- **`ICurrentFileObserver`** — told which file the main window has open, so per-file
+  state (e.g. a badge describing it) can follow along.
+- **`IToolbarCommand`** — add a button to the top bar next to "Open folder…", for an
+  action that isn't about the file currently open (a batch job over a folder, say).
+
+`PluginHost.FfmpegPath` / `FfprobePath` carry the executables the host resolved at
+startup, for plugins that shell out to them.
 
 Plugins manage their own settings persistence — write a JSON next to the exe, or
 whatever fits.

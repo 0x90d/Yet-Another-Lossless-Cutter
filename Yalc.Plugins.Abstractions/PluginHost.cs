@@ -50,6 +50,16 @@ public static class PluginHost
     }
 
     /// <summary>
+    /// The ffmpeg / ffprobe executables the host resolved at startup, or null when they
+    /// aren't installed. Published here so a plugin that shells out to them doesn't have
+    /// to re-implement the host's lookup (app dir, app/bin, PATH).
+    /// </summary>
+    public static string? FfmpegPath { get; set; }
+
+    /// <inheritdoc cref="FfmpegPath"/>
+    public static string? FfprobePath { get; set; }
+
+    /// <summary>
     /// Raised when a plugin's status badge state changes. The main window subscribes
     /// and re-renders pills. Plugins call <see cref="NotifyBadgesChanged"/> when their
     /// own settings change. Stays decoupled from any specific UI framework.

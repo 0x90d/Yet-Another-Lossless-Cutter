@@ -218,6 +218,9 @@
                 Margin="6,0,0,0"
                 Click="OpenFolderButton_Click"
                 ToolTip.Tip="Open every matching video in a folder as a playlist" />
+        <!-- One button per IToolbarCommand plugin; filled in code-behind. -->
+        <StackPanel x:Name="PluginToolbarCommands" Orientation="Horizontal"
+                    Spacing="2" Margin="6,0,0,0" IsVisible="False" />
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="2"
                   HorizontalAlignment="Stretch" VerticalAlignment="Center"
@@ -549,6 +552,8 @@
             <Button x:Name="DetectSilenceButton" Content="↓ silence"
                     Click="DetectSilenceButton_Click"
                     ToolTip.Tip="Auto-detect silent gaps and create segments for the rest. Threshold and minimum-silence-length are in Settings. Click again while running to cancel." />
+            <!-- One button per ISegmentDetector plugin; filled in code-behind. -->
+            <StackPanel x:Name="PluginDetectorButtons" Orientation="Horizontal" Spacing="3" IsVisible="False" />
 
             <Border Classes="tx-sep" />
 
