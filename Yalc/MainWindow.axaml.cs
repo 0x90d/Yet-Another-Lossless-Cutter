@@ -411,6 +411,27 @@ public partial class MainWindow : Window
         _extractorLoadedPath = path;
     }
 
+    /// <summary>
+    /// Closes the thumbnail extractor's FFmpeg handle on the file it currently has
+    /// open. Unlike mpv's "stop" — queued, but self-clearing within a few hundred ms —
+    /// this handle is held open deliberately between extractions and never times out,
+    /// and FFmpeg opens without FILE_SHARE_DELETE, so it blocks <c>File.Delete</c>
+    /// outright. Deleting or moving the source has to await this first; retrying the
+    /// delete alone will never get past it.
+    ///
+    /// Cancel any in-flight strip before calling, or the unload queues behind a decode.
+    /// UI thread only — it touches the extractor fields.
+    /// </summary>
+    private Task<bool> ReleaseExtractorFileAsync()
+    {
+        var extractor = _extractor;
+        // Cleared up front: if the unload times out on a wedged decode the extractor
+        // still has the file, but a stale null only costs one redundant reopen, while
+        // a stale path would skip the reopen and extract against closed contexts.
+        _extractorLoadedPath = null;
+        return extractor.UnloadAsync();
+    }
+
     /// <summary>Thrown by <see cref="RunExtractorOpAsync{T}"/> when the extractor is
     /// presumed wedged in a blocking native call. By the time it's thrown a fresh
     /// extractor instance is already in <c>_extractor</c>; the caller's job is just to
@@ -1569,6 +1590,9 @@ public partial class MainWindow : Window
     /// needs ffmpeg to read the file and the player no longer needs a handle).
     /// Caller is responsible for not invoking this if the user might still want to
     /// preview the file.
+    ///
+    /// Releases the PLAYER's handle only — the thumbnail extractor keeps its own, and
+    /// that one has to go through <see cref="ReleaseExtractorFileAsync"/>.
     /// </summary>
     private void ReleaseCurrentFile()
     {
@@ -2069,6 +2093,13 @@ public partial class MainWindow : Window
             if (!ok) return;
         }
 
+        // The thumbnail extractor holds its own FFmpeg handle on this file, and that
+        // one doesn't clear on its own — close it before the playlist moves on (doing
+        // it after would cancel the NEXT file's thumbnail strip instead of this one's).
+        _baseThumbCts?.Cancel();
+        _zoomThumbCts?.Cancel();
+        await ReleaseExtractorFileAsync();
+
         // Advance playlist BEFORE deleting so the player loads the next file (which
         // releases the current one's handle). If there's no next file, stop the player
         // explicitly so the OS lock on the current file is released.
@@ -2458,6 +2489,18 @@ public partial class MainWindow : Window
 
         if (isCurrent)
             await Dispatcher.UIThread.InvokeAsync(ReleaseCurrentFile);
+
+        // The thumbnail extractor keeps whichever file it last opened open, which is
+        // not always the current one (the user can advance past a file before its
+        // strip is ever generated). Close it when it's this file — an open FFmpeg
+        // context blocks the delete for good, not just for a few hundred ms.
+        Task<bool>? releaseExtractor = null;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (string.Equals(_extractorLoadedPath, sourcePath, StringComparison.OrdinalIgnoreCase))
+                releaseExtractor = ReleaseExtractorFileAsync();
+        });
+        if (releaseExtractor != null) await releaseExtractor;
 
         // mpv's "stop" command is queued — the OS-level handle isn't released
         // synchronously. Retry-with-backoff handles that timing without blocking

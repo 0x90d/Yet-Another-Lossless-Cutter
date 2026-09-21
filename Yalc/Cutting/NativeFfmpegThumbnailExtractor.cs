@@ -136,6 +136,31 @@ public sealed class NativeFfmpegThumbnailExtractor : IDisposable
         finally { _gate.Release(); }
     }, ct);
 
+    /// <summary>
+    /// Closes the open file and releases its OS handle, leaving the instance usable —
+    /// the next extraction reopens from scratch. FFmpeg opens files without
+    /// FILE_SHARE_DELETE, so on Windows a context left open here makes the source
+    /// undeletable (sharing violation) no matter how long the caller retries; anything
+    /// that deletes or moves the source has to close this first.
+    ///
+    /// Returns false when a native call still owns the gate after
+    /// <paramref name="timeoutMs"/>. Freeing the contexts under a live decode is what
+    /// corrupts the native heap (see <see cref="Dispose"/>), so a wedged extraction
+    /// keeps its handle and the caller gets told rather than risking the process.
+    /// </summary>
+    public async Task<bool> UnloadAsync(int timeoutMs = 2000)
+    {
+        if (_disposed) return true;
+        if (!await _gate.WaitAsync(timeoutMs).ConfigureAwait(false)) return false;
+        try
+        {
+            CloseInternal();
+            _loadedPath = null;
+        }
+        finally { _gate.Release(); }
+        return true;
+    }
+
     private unsafe void LoadInternal(string path)
     {
         CloseInternal();
