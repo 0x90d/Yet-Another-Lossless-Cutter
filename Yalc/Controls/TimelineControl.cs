@@ -281,19 +281,23 @@ public class TimelineControl : Control
 
     private enum DragMode { None, Playhead, SegmentStart, SegmentEnd, SegmentBody }
     private DragMode _drag = DragMode.None;
-    // Set once the playhead actually moves during a drag. Gates the final exact seek
-    // on release — a click that never moved already got one from OnPointerPressed.
+    // Set once the playhead actually moves during a drag (a scrub, or an edge drag the
+    // playhead follows). Gates the final exact seek on release — a click that never
+    // moved already got one from OnPointerPressed.
     private bool _playheadDragMoved;
 
+    private bool IsEdgeDrag => _drag is DragMode.SegmentStart or DragMode.SegmentEnd;
+
     /// <summary>
-    /// True while the user is dragging the playhead. Hosts must not write
+    /// True while the user is dragging the playhead, or a segment edge the playhead
+    /// follows so the video shows the frame being cut at. Hosts must not write
     /// <see cref="Position"/> while this is set: the drag owns the playhead, and
     /// preview ticks are served with keyframe seeks, so the player reports back a
     /// snapped time that can sit a whole GOP away from the pointer. Echoing it would
     /// yank the playhead backwards mid-drag and make the release seek land on the
     /// snapped time instead of where the user actually dropped it.
     /// </summary>
-    public bool IsScrubbing => _drag == DragMode.Playhead;
+    public bool IsScrubbing => _drag == DragMode.Playhead || IsEdgeDrag;
     private VideoSegment? _dragSegment;
     private double _dragGrabOffset;
     // Captured on drag-start so we can emit a single SegmentEdited event with the
@@ -942,6 +946,7 @@ public class TimelineControl : Control
             _dragGrabOffset = hit.mode == DragMode.SegmentBody ? t - hit.seg!.CutFromSeconds : 0;
             _dragOldFrom = hit.seg!.CutFromSeconds;
             _dragOldTo = hit.seg.CutToSeconds;
+            _playheadDragMoved = false;
             e.Pointer.Capture(this);
             return;
         }
@@ -966,8 +971,11 @@ public class TimelineControl : Control
         // segment — small lists stay on the small-object heap.
         var targets = new System.Collections.Generic.List<double>(3 + Segments.Count * 2)
         {
-            0, Duration, Position
+            0, Duration
         };
+        // During an edge drag the playhead follows the edge, so it would snap the edge
+        // back to where it was on the previous tick and pin it there.
+        if (!IsEdgeDrag) targets.Add(Position);
         foreach (var seg in Segments)
         {
             if (seg == exclude) continue;
@@ -1097,12 +1105,14 @@ public class TimelineControl : Control
             {
                 var snapped = SnapTime(t, _dragSegment, snapDisabled);
                 _dragSegment.CutFromSeconds = Math.Min(snapped, _dragSegment.CutToSeconds - 0.04);
+                FollowEdge(_dragSegment.CutFromSeconds);
                 break;
             }
             case DragMode.SegmentEnd when _dragSegment != null:
             {
                 var snapped = SnapTime(t, _dragSegment, snapDisabled);
                 _dragSegment.CutToSeconds = Math.Max(snapped, _dragSegment.CutFromSeconds + 0.04);
+                FollowEdge(_dragSegment.CutToSeconds);
                 break;
             }
             case DragMode.SegmentBody when _dragSegment != null:
@@ -1114,6 +1124,17 @@ public class TimelineControl : Control
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Keep the playhead on the edge being dragged so the video shows the frame the cut
+    /// will land on. Preview seek per tick, exact one on release — same as a scrub.
+    /// </summary>
+    private void FollowEdge(double edge)
+    {
+        Position = edge;
+        _playheadDragMoved = true;
+        RaiseTime(PositionDraggedEvent, edge, isPreview: true);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -1129,7 +1150,7 @@ public class TimelineControl : Control
                 || _drag == DragMode.SegmentEnd;
             // The playhead drag fed the host cheap keyframe seeks while in flight;
             // now that the position is final, ask for the frame-exact one.
-            var endedPlayheadDrag = _drag == DragMode.Playhead && _playheadDragMoved;
+            var endedPlayheadDrag = (_drag == DragMode.Playhead || IsEdgeDrag) && _playheadDragMoved;
             var seg = _dragSegment;
             var oldFrom = _dragOldFrom;
             var oldTo = _dragOldTo;
