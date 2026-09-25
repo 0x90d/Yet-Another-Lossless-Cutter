@@ -2808,12 +2808,25 @@ public partial class MainWindow : Window
         if (detectors.Count == 0 || _cachedSegmentsAppliedFor == file) return;
 
         var cached = new List<DetectedSegment>();
+        var summaries = new List<string>();
         foreach (var detector in detectors)
         {
             var result = detector.GetCachedSegments(file);
-            if (result != null) cached.AddRange(result.Segments);
+            if (result == null) continue;
+            cached.AddRange(result.Segments);
+            if (result.Summary.Length > 0) summaries.Add(result.Summary);
         }
-        if (cached.Count == 0) return;
+        if (cached.Count == 0)
+        {
+            // Scanned and found nothing is an answer too — say so, or a clean file
+            // looks exactly like one that was never scanned.
+            if (summaries.Count > 0)
+            {
+                _cachedSegmentsAppliedFor = file;
+                SetStatus(string.Join(" · ", summaries));
+            }
+            return;
+        }
 
         // Same duration-availability wait as the waveform / thumbnail passes.
         for (var i = 0; i < 20 && _duration <= 0; i++) await Task.Delay(50);
