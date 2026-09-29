@@ -2914,6 +2914,8 @@ public partial class MainWindow : Window
             ColorIndex = SegmentPalette.PickUnusedIndex(Timeline.Segments.Select(s => s.ColorIndex)),
         };
         Timeline.Segments.Add(seg);
+        // Select the new segment so Set In/Out edit it rather than whatever was selected before.
+        SegmentList.SelectedItem = seg;
         _undo.Push(new Undo.AddSegmentAction(Timeline.Segments, seg, Timeline.Segments.Count - 1));
         _ = LoadThumbnailAsync(seg);
     }
