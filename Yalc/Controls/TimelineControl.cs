@@ -934,11 +934,11 @@ public class TimelineControl : Control
         Position = t;
         RaiseTime(PositionDraggedEvent,t);
 
-        // Then determine drag mode based on what's under the cursor. Segment-body
-        // moves register only when the click is inside the segment's header band
-        // (see HitTestSegments) — clicks below the header fall through to scrub so
-        // dragging to seek inside a cut works without a modifier.
-        var hit = HitTestSegments(x, py);
+        // Segment edits need Ctrl held. Without it the strip only seeks — a plain
+        // click that happened to land within a few pixels of an edge used to grab the
+        // segment instead of scrubbing. Ctrl rather than Shift because Shift already
+        // turns snapping off mid-drag; not Alt because releasing it focuses the menu.
+        var hit = IsSegmentEditModifier(e.KeyModifiers) ? HitTestSegments(x, py) : (DragMode.None, null);
         if (hit.mode != DragMode.None)
         {
             _drag = hit.mode;
@@ -984,6 +984,9 @@ public class TimelineControl : Control
         }
         return TimelineMath.SnapTime(t, ViewDuration, Bounds.Width, targets, HandleHitRadius);
     }
+
+    private static bool IsSegmentEditModifier(KeyModifiers modifiers) =>
+        (modifiers & KeyModifiers.Control) != 0;
 
     private (DragMode mode, VideoSegment? seg) HitTestSegments(double x, double y)
     {
@@ -1066,8 +1069,10 @@ public class TimelineControl : Control
         {
             // Cursor feedback: tell the user what each part of the strip will do.
             // Body cursor only shows over the segment header band — the rest of the
-            // strip (including segment body tint) scrubs.
-            var hit = HitTestSegments(x, e.GetPosition(this).Y);
+            // strip (including segment body tint) scrubs. Without Ctrl it's all scrub.
+            var hit = IsSegmentEditModifier(e.KeyModifiers)
+                ? HitTestSegments(x, e.GetPosition(this).Y)
+                : (DragMode.None, null);
             Cursor = hit.mode switch
             {
                 DragMode.SegmentStart or DragMode.SegmentEnd => HandleCursor,

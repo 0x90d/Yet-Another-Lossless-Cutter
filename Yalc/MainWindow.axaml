@@ -399,7 +399,7 @@
                      SelectionMode="Single" />
             <TextBlock x:Name="SegmentsEmptyState" Classes="empty-state"
                        Margin="20"
-                       Text="No segments&#x0A;Drag handles on the timeline, or press +&#x0A;Cut with no segment cuts the whole file" />
+                       Text="No segments&#x0A;Press + to add one, Ctrl+drag its edges on the timeline&#x0A;Cut with no segment cuts the whole file" />
           </Grid>
         </Grid>
       </Grid>

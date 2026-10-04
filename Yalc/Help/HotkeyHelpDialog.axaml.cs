@@ -89,9 +89,10 @@ public partial class HotkeyHelpDialog : Window
         });
         AppendStaticGroup("Mouse on timeline", new (string, string)[]
         {
-            ("Click strip",                "Seek playhead"),
-            ("Drag in segment header",     "Move segment"),
-            ("Drag segment edge handle",   "Resize segment"),
+            ("Click / drag strip",              "Seek playhead"),
+            ("Ctrl + drag in segment header",   "Move segment"),
+            ("Ctrl + drag segment edge handle", "Resize segment"),
+            ("Ctrl + Shift + drag",             "Move / resize without snapping"),
             ("Double-click segment",       "Play segment from start"),
             ("Right-click",                "Context menu / auto-seek"),
         });

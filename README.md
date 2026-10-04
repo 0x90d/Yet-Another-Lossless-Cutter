@@ -98,6 +98,7 @@ the bundled icon to `~/.local/share/icons/`.
 | `Ctrl + scroll` | Zoom timeline (cursor pivots) |
 | `Shift + scroll` | Pan timeline |
 | Middle-drag | Pan timeline |
+| `Ctrl` + drag segment edge / header | Resize / move segment (add `Shift` to skip snapping) |
 | Scroll | Seek (60s by default) |
 | Drag-and-drop files | Load as playlist |
 
