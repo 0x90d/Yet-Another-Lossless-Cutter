@@ -128,6 +128,13 @@ public sealed class FfmpegCutter
             "-hide_banner",
             "-loglevel", "error",
             "-progress", "pipe:1",
+            // Stream-recorder .ts captures can start their audio several seconds after the
+            // video (7s seen). The default 5s probe gives up first, the audio stream comes
+            // through as "0 channels, sample rate not set", and the mp4 muxer fails with
+            // "Could not write header". Probing stops as soon as every stream has its
+            // parameters, so a normal file pays nothing for the wider window.
+            "-analyzeduration", "60M",
+            "-probesize", "100M",
             // -ss BEFORE -i: fast input seek (keyframe). With -c copy we keep keyframe alignment;
             // -avoid_negative_ts make_zero shifts timestamps so the output starts at 0.
             "-ss", FormatTime(segment.CutFrom),
