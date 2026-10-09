@@ -23,7 +23,11 @@ public sealed class FfmpegCutter
 
     public FfmpegCutter(Settings settings) { _settings = settings; }
 
-    public Task CutAsync(VideoSegment segment,
+    /// <returns>The file actually written. Differs from <see cref="VideoSegment.ComputeOutputFile"/>
+    /// when the .ts retry fell back to .mp4, and recomputing it later can also drift
+    /// ({time} / {datetime} tokens render the current clock), so callers that need the
+    /// output again should keep this.</returns>
+    public Task<string> CutAsync(VideoSegment segment,
         IProgress<double>? progress = null,
         ProcessPriorityClass priority = ProcessPriorityClass.Normal,
         CancellationToken ct = default)
@@ -32,7 +36,7 @@ public sealed class FfmpegCutter
         return CutToPathAsync(segment, output, priority, progress, ct);
     }
 
-    private async Task CutToPathAsync(VideoSegment segment, string outputPath,
+    private async Task<string> CutToPathAsync(VideoSegment segment, string outputPath,
         ProcessPriorityClass priority, IProgress<double>? progress, CancellationToken ct)
     {
         var outputDir = Path.GetDirectoryName(outputPath);
@@ -49,7 +53,7 @@ public sealed class FfmpegCutter
             segment.MaxDuration - segment.CutTo <= startSlack)
         {
             await FileCopyWithProgress(segment.SourceFile, outputPath, progress, ct);
-            return;
+            return outputPath;
         }
 
         var ffmpeg = FfmpegLocator.FfmpegPath
@@ -111,14 +115,14 @@ public sealed class FfmpegCutter
                 !outExt.Equals(".mp4", StringComparison.OrdinalIgnoreCase))
             {
                 var mp4Output = Path.ChangeExtension(outputPath, ".mp4");
-                await CutToPathAsync(segment, mp4Output, priority, progress, ct);
-                return;
+                return await CutToPathAsync(segment, mp4Output, priority, progress, ct);
             }
 
             throw new FfmpegException(p.ExitCode, commandLog, stderr.ToString());
         }
 
         progress?.Report(1.0);
+        return outputPath;
     }
 
     private List<string> BuildCutArgs(VideoSegment segment, string outputPath)
@@ -195,10 +199,11 @@ public sealed class FfmpegCutter
     }
 
     /// <summary>
-    /// Concat-merges already-cut segments into a single output. Uses ffmpeg's concat demuxer,
-    /// which requires all inputs to share codec parameters — fine for stream-copy outputs.
+    /// Concat-merges already-cut files, in the order given, into a single output. Uses
+    /// ffmpeg's concat demuxer, which requires all inputs to share codec parameters —
+    /// fine for stream-copy outputs of one source.
     /// </summary>
-    public static async Task MergeAsync(string outputPath, IReadOnlyList<VideoSegment> segments,
+    public static async Task MergeAsync(string outputPath, IReadOnlyList<string> inputs,
         Settings settings, CancellationToken ct = default)
     {
         var ffmpeg = FfmpegLocator.FfmpegPath
@@ -207,13 +212,13 @@ public sealed class FfmpegCutter
                 string.Join("\n  ", FfmpegLocator.FfmpegSearchedPaths));
 
         var manifest = new StringBuilder();
-        foreach (var seg in segments)
+        foreach (var input in inputs)
         {
-            var p = seg.ComputeOutputFile(settings);
-            if (!File.Exists(p)) continue;
             // concat demuxer: lines look like  file '/abs/path.mp4'
-            // Single quotes inside paths must be backslash-escaped.
-            manifest.Append("file '").Append(p.Replace("'", @"\'")).Append("'\n");
+            // A backslash inside single quotes is literal (which is what keeps Windows
+            // paths intact), so a quote can't be escaped in place: close the string,
+            // add an escaped quote, reopen.  it's → 'it'\''s'
+            manifest.Append("file '").Append(input.Replace("'", @"'\''")).Append("'\n");
         }
 
         var manifestPath = Path.Combine(Path.GetTempPath(), $"yalc_concat_{Guid.NewGuid():N}.txt");
@@ -238,7 +243,16 @@ public sealed class FfmpegCutter
             psi.ArgumentList.Add("-safe"); psi.ArgumentList.Add("0");
             psi.ArgumentList.Add("-i"); psi.ArgumentList.Add(manifestPath);
             psi.ArgumentList.Add("-c"); psi.ArgumentList.Add("copy");
+            // Keep every track the cuts carry — without -map 0 ffmpeg picks one video and
+            // one audio stream, so a second audio track silently disappears. The mp4
+            // muxer's tmcd track comes back through the concat demuxer as an unknown
+            // stream type, which -ignore_unknown skips; the muxer writes a fresh one.
+            if (settings.IncludeAllStreams)
+            {
+                psi.ArgumentList.Add("-map"); psi.ArgumentList.Add("0");
+            }
             psi.ArgumentList.Add("-map_metadata"); psi.ArgumentList.Add("0");
+            psi.ArgumentList.Add("-ignore_unknown");
             psi.ArgumentList.Add("-y");
             psi.ArgumentList.Add(LongPath(outputPath));
 

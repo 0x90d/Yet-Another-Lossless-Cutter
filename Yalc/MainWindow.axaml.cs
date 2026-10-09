@@ -2228,11 +2228,14 @@ public partial class MainWindow : Window
         var cutter = new FfmpegCutter(Settings.Instance);
         var doneCount = 0;
         var failedCount = 0;
+        var mergeFailedCount = 0;
 
         // Track per-source success/failure for the optional MergeSegments pass below.
         // We can't rely on _queueSegments after the fact because RemoveFinishedSegments
-        // may have already cleared finished items out of it.
-        var mergeGroups = new Dictionary<string, List<VideoSegment>>(StringComparer.OrdinalIgnoreCase);
+        // may have already cleared finished items out of it. Each cut keeps the path it
+        // was actually written to — recomputing it at merge time misses the .ts → .mp4
+        // retry and anything a {time} token renders differently a few minutes later.
+        var mergeGroups = new Dictionary<string, List<(VideoSegment Segment, string Output)>>(StringComparer.OrdinalIgnoreCase);
         var failedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         while (!ct.IsCancellationRequested)
@@ -2279,11 +2282,11 @@ public partial class MainWindow : Window
                 var priority = Settings.Instance.LowCuttingProcessPriority
                     ? ProcessPriorityClass.BelowNormal
                     : ProcessPriorityClass.Normal;
-                await cutter.CutAsync(next, progress, priority, ct);
+                var output = await cutter.CutAsync(next, progress, priority, ct);
                 doneCount++;
                 if (!mergeGroups.TryGetValue(next.SourceFile, out var group))
-                    mergeGroups[next.SourceFile] = group = new List<VideoSegment>();
-                group.Add(next);
+                    mergeGroups[next.SourceFile] = group = new List<(VideoSegment, string)>();
+                group.Add((next, output));
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     next.Status = ProgressStatus.Finished;
@@ -2297,10 +2300,8 @@ public partial class MainWindow : Window
                 // After the segment is marked Finished, optionally delete the source.
                 // Has to run *after* the UI marshalling above so the "is anything else
                 // pending for this source?" check sees the just-completed item as Finished.
-                // Skip when MergeSegments is on — the source is still needed by the
-                // post-queue concat pass to resolve the cut output paths via
-                // VideoSegment.ComputeOutputFile (which dereferences the source path).
-                // Auto-delete still runs after the merge step if the user wants both.
+                // Skip when MergeSegments is on — a merge that fails should leave the
+                // source in place. The merge pass below deletes it once it's done.
                 if (Settings.Instance.DeleteSourceFileAfterDone && !Settings.Instance.MergeSegments)
                     await TryAutoDeleteSourceAsync(next.SourceFile);
             }
@@ -2342,34 +2343,53 @@ public partial class MainWindow : Window
         // expects). Only runs when there are at least 2 segments to combine.
         if (!ct.IsCancellationRequested && Settings.Instance.MergeSegments)
         {
-            foreach (var (source, segs) in mergeGroups)
+            foreach (var (source, cuts) in mergeGroups)
             {
                 if (failedSources.Contains(source)) continue;
-                if (segs.Count < 2) continue;
+                if (cuts.Count < 2)
+                {
+                    // Nothing to merge, so nothing to wait for — the per-cut delete above
+                    // held this source back on the merge's behalf.
+                    if (Settings.Instance.DeleteSourceFileAfterDone)
+                        await TryAutoDeleteSourceAsync(source);
+                    continue;
+                }
                 try
                 {
-                    var anyCut = segs[0].ComputeOutputFile(Settings.Instance);
-                    var outDir = Path.GetDirectoryName(anyCut)!;
-                    var stem = Path.GetFileNameWithoutExtension(source);
-                    var ext = Path.GetExtension(source);
-                    var mergedPath = Path.Combine(outDir, $"{stem}-merged{ext}");
+                    // Queue order is the order the segments were added, not where they
+                    // sit in the file — merge them as they play.
+                    var inputs = cuts.OrderBy(c => c.Segment.CutFrom).Select(c => c.Output).ToList();
+
+                    // A template without {start}/{end} sends every cut of a file to the same
+                    // name, each overwriting the last. Concatenating that would produce the
+                    // final segment N times and then delete the only cut left.
+                    var clash = inputs.GroupBy(p => p, StringComparer.OrdinalIgnoreCase)
+                        .FirstOrDefault(g => g.Count() > 1);
+                    if (clash != null)
+                    {
+                        mergeFailedCount++;
+                        AppendErrorLog($"[merge {Path.GetFileName(source)}] not merged: {clash.Count()} segments were cut to " +
+                            $"{Path.GetFileName(clash.Key)}, each overwriting the previous one. " +
+                            "Put {start} and {end} in the output filename template.");
+                        continue;
+                    }
+
+                    var first = inputs[0];
+                    var mergedPath = Path.Combine(Path.GetDirectoryName(first)!,
+                        $"{Path.GetFileNameWithoutExtension(source)}-merged{Path.GetExtension(first)}");
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                         SetStatus($"merging {Path.GetFileName(source)}…"));
 
-                    await FfmpegCutter.MergeAsync(mergedPath, segs, Settings.Instance, ct);
+                    await FfmpegCutter.MergeAsync(mergedPath, inputs, Settings.Instance, ct);
 
                     // Merge succeeded — delete the intermediate cuts. They served their
                     // purpose; the user asked for a single merged output and keeping
                     // both pollutes the output folder. Done last so a failed merge
                     // doesn't lose the cuts.
-                    foreach (var seg in segs)
+                    foreach (var cutPath in inputs)
                     {
-                        try
-                        {
-                            var cutPath = seg.ComputeOutputFile(Settings.Instance);
-                            if (File.Exists(cutPath)) File.Delete(cutPath);
-                        }
+                        try { File.Delete(cutPath); }
                         catch { /* leave the cut behind if delete fails — non-fatal */ }
                     }
 
@@ -2381,31 +2401,34 @@ public partial class MainWindow : Window
                 catch (OperationCanceledException) { break; }
                 catch (FfmpegException ex)
                 {
-                    failedCount++;
+                    mergeFailedCount++;
                     AppendErrorLog($"[merge {Path.GetFileName(source)}] ffmpeg exit {ex.ExitCode}\n  cmd: {ex.Command}\n  stderr:\n{ex.Stderr}");
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                        SetStatus($"merge failed — {Path.GetFileName(source)} (see error log)"));
                 }
                 catch (Exception ex)
                 {
-                    failedCount++;
+                    mergeFailedCount++;
                     AppendErrorLog($"[merge {Path.GetFileName(source)}] unexpected: {ex}");
                 }
             }
         }
 
+        // A merge failure has no queue item to turn red, so the closing status is the
+        // only place it shows — a bare "1 failed" next to an all-green queue reads as a bug.
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            SetStatus(failedCount == 0
+            var status = failedCount == 0
                 ? $"queue done — {doneCount} finished"
-                : $"queue done — {doneCount} finished, {failedCount} failed");
+                : $"queue done — {doneCount} finished, {failedCount} failed";
+            if (mergeFailedCount > 0)
+                status += $", {mergeFailedCount} merge(s) failed (cuts kept, see error log)";
+            SetStatus(status);
         });
 
         // Shutdown when done: only when the user opted in AND nothing failed. A
         // failed cut probably needs investigation; shutting down away from a Failed
         // status would hide the problem.
-        if (Settings.Instance.ShutdownWhenDone && failedCount == 0 && doneCount > 0
-            && !ct.IsCancellationRequested)
+        if (Settings.Instance.ShutdownWhenDone && failedCount == 0 && mergeFailedCount == 0
+            && doneCount > 0 && !ct.IsCancellationRequested)
         {
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
